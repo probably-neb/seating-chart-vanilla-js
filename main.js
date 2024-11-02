@@ -1,19 +1,29 @@
 import "./style.css";
 
+// grid
+const gridW = 60;
+const gridH = 30;
+const gridCellPx = Math.floor((0.8 * window.innerWidth) / gridW);
+
+const GRID_PROP_W = "--grid-w";
+const GRID_PROP_H = "--grid-h";
+
+// seats
 const SEAT_GRID_W = 4;
 const SEAT_GRID_H = 4;
 
-// grid
-const gridW = 80;
-const gridH = 40;
-const gridCellPx = Math.floor(window.innerWidth / gridW);
+const SEAT_PROP_GRID_W = "--seat-grid-w";
+const SEAT_PROP_GRID_H = "--seat-grid-h";
 
-// seats
+const SEAT_PROP_GRID_X = "--grid-x";
+const SEAT_PROP_GRID_Y = "--grid-y";
+
 const SEAT_TRANSFORM =
     "translate(calc(var(--grid-cell-px) * var(--grid-x)), calc(var(--grid-cell-px) * var(--grid-y)))";
 const SEAT_DATA_IDENTIFIER = "seat";
 const SEAT_ID_PREFIX = "drag-";
-let next_draggable_id = 0;
+
+let next_seat_id = 0;
 let seat_refs = [];
 let seat_locs = [];
 
@@ -29,11 +39,16 @@ const DRAG_DATA_TYPE_KIND = "application/kind";
 
 const DRAG_DATA_TYPE_KIND_SEAT = "seat";
 const DRAG_DATA_TYPE_KIND_SELECTION = "selection";
+const DRAG_DATA_TYPE_KIND_STUDENT = "student"
 
 function assert(val, ...msg) {
     if (val) return;
     console.error("Assertion failed: ", ...msg);
     throw new Error("Assertion failed: " + msg?.map(String).join(" ") ?? "");
+}
+
+function grid_cell_px_dim(v) {
+    return `calc(var(--grid-cell-px) * var(${v}))`;
 }
 
 const app = document.getElementById("app");
@@ -43,12 +58,17 @@ const invisible_drag_preview = document.createElement("span");
 invisible_drag_preview.style.display = "none";
 app.appendChild(invisible_drag_preview);
 
-const container = document.createElement("div");
+const container = document.getElementById("container");
+assert(container != null, "container not null");
 container.id = "canvas";
 container.className = "relative bg-white";
 container.style.setProperty("--grid-cell-px", gridCellPx + "px");
-container.style.width = gridW * gridCellPx + "px";
-container.style.height = gridH * gridCellPx + "px";
+container.style.setProperty(SEAT_PROP_GRID_W, SEAT_GRID_W);
+container.style.setProperty(SEAT_PROP_GRID_H, SEAT_GRID_H);
+container.style.setProperty(GRID_PROP_W, gridW);
+container.style.setProperty(GRID_PROP_H, gridH);
+container.style.width = grid_cell_px_dim(GRID_PROP_W);
+container.style.height = grid_cell_px_dim(GRID_PROP_H);
 container.ondragover = function (event) {
     event.preventDefault();
 };
@@ -58,12 +78,30 @@ container.style.backgroundImage = `
                     `;
 container.style.backgroundSize = `var(--grid-cell-px) var(--grid-cell-px)`;
 
+const seat_preview = document.createElement("div");
+seat_preview.id = "seat-preview";
+seat_preview.className = "absolute bg-blue-300 border-2 border-indigo-500";
+seat_preview.style.display = "none";
+seat_preview.style.width = grid_cell_px_dim(SEAT_PROP_GRID_W);
+seat_preview.style.height = grid_cell_px_dim(SEAT_PROP_GRID_H);
+container.appendChild(seat_preview);
+
+function preview_show(gridX, gridY) {
+    seat_transform_set(seat_preview, gridX, gridY);
+    seat_preview.style.display = "block";
+}
+
+function preview_hide() {
+    seat_preview.style.display = "none";
+}
+
 const selection = document.createElement("div");
 selection.id = "selection";
 selection.className = "absolute bg-blue-300/40 ring-2 ring-blue-500 z-5";
 selection.style.display = "none";
 selection.draggable = true;
 container.appendChild(selection);
+
 
 selection.ondragstart = function (event) {
     console.log("selection ondragstart");
@@ -125,8 +163,7 @@ selection.ondragend = function (event) {
         // drop succeeded
         return;
     }
-
-}
+};
 
 function selection_region_is_normalized() {
     if (selected_region == null) {
@@ -144,104 +181,14 @@ function selection_region_is_normalized() {
     return startX <= endX && startY <= endY;
 }
 
-function selection_region_normalize() {
-    if (selected_region == null) {
-        console.warn("cannot normalize selection - region is null");
-        return;
-    }
-    const startX = Math.min(
-        selected_region.start.gridX,
-        selected_region.end.gridX,
-    );
-    const startY = Math.min(
-        selected_region.start.gridY,
-        selected_region.end.gridY,
-    );
-    const endX = Math.max(
-        selected_region.start.gridX,
-        selected_region.end.gridX,
-    );
-    const endY = Math.max(
-        selected_region.start.gridY,
-        selected_region.end.gridY,
-    );
-
-    const {
-        start: { gridX: ostartX, gridY: ostartY },
-        end: { gridX: oendX, gridY: oendY },
-    } = selected_region;
-    console.log(
-        `b: [${ostartX},${ostartY}] [${oendX},${oendY}]`,
-        `a: [${startX},${startY}] [${endX},${endY}]`,
-    );
-
-    selected_region.start.gridX = startX;
-    selected_region.start.gridY = startY;
-    selected_region.end.gridX = endX;
-    selected_region.end.gridY = endY;
-}
-
-// PERF: remove usages of this function and have selected_region store an additonal feild called anchor
-//       where selection always rotates around the anchor
-function selected_region_normalized() {
-    assert(selected_region != null, "selected_region not null");
-
-    const startX = Math.min(
-        selected_region.start.gridX,
-        selected_region.end.gridX,
-    );
-    const startY = Math.min(
-        selected_region.start.gridY,
-        selected_region.end.gridY,
-    );
-    const endX = Math.max(
-        selected_region.start.gridX,
-        selected_region.end.gridX,
-    );
-    const endY = Math.max(
-        selected_region.start.gridY,
-        selected_region.end.gridY,
-    );
-
-    const {
-        start: { gridX: ostartX, gridY: ostartY },
-        end: { gridX: oendX, gridY: oendY },
-    } = selected_region;
-    console.log(
-        `b: [${ostartX},${ostartY}] [${oendX},${oendY}]`,
-        `a: [${startX},${startY}] [${endX},${endY}]`,
-    );
-
-    // selected_region.start.gridX = startX;
-    // selected_region.start.gridY = startY;
-    // selected_region.end.gridX = endX;
-    // selected_region.end.gridY = endY;
-    return {
-        start: { gridX: startX, gridY: startY },
-        end: { gridX: endX, gridY: endY },
-    }
-}
-
 function selected_region_end_set(newX, newY) {
     assert(selected_region != null, "selected_region not null");
     assert(selected_region.end != null, "selected_region.end not null");
 
-    const startX = Math.min(
-        selected_region.anchor.gridX,
-        newX,
-    );
-    const startY = Math.min(
-        selected_region.anchor.gridY,
-        newY,
-    );
-    const endX = Math.max(
-        selected_region.anchor.gridX,
-        newX,
-    );
-    const endY = Math.max(
-        selected_region.anchor.gridY,
-        newY,
-    );
+    const startX = Math.min(selected_region.anchor.gridX, newX);
+    const startY = Math.min(selected_region.anchor.gridY, newY);
+    const endX = Math.max(selected_region.anchor.gridX, newX);
+    const endY = Math.max(selected_region.anchor.gridY, newY);
 
     selected_region.start.gridX = startX;
     selected_region.start.gridY = startY;
@@ -249,33 +196,17 @@ function selected_region_end_set(newX, newY) {
     selected_region.end.gridY = endY;
 
     assert(selection_region_is_normalized(), "selection region is normalized");
-
-    // if (endX <= selected_region.start.gridX) {
-    //     selected_region.start.gridX = endX;
-    // } else {
-    //     selected_region.end.gridX = endX;
-    // }
-    // if (endY <= selected_region.start.gridY) {
-    //     selected_region.start.gridY = endY;
-    // } else {
-    //     selected_region.end.gridY = endY;
-    // }
 }
 
 function selection_update() {
     if (selected_region == null) {
         return;
     }
-    // assert(
-    //     selection_region_is_normalized(),
-    //     "selection region is normalized",
-    //     selected_region,
-    // );
 
     const {
         start: { gridX: startX, gridY: startY },
         end: { gridX: endX, gridY: endY },
-    } = selected_region//_normalized();
+    } = selected_region;
 
     selection.style.transform = `translate(${startX * gridCellPx}px, ${startY * gridCellPx}px)`;
     selection.style.width = Math.abs(endX - startX) * gridCellPx + "px";
@@ -363,9 +294,7 @@ container.onmousemove = function (event) {
         (event.clientY - containerDomRect.top) / gridCellPx,
     );
     console.log(`end = [${gridX}, ${gridY}]`);
-    // selected_region.end = { gridX, gridY };
     selected_region_end_set(gridX, gridY);
-    // selection_region_normalize();
 
     selection_update();
 };
@@ -383,9 +312,7 @@ container.onmouseup = function (event) {
     const gridY = Math.round(
         (event.clientY - containerDomRect.top) / gridCellPx,
     );
-    // selected_region.end = { gridX, gridY };
     selected_region_end_set(gridX, gridY);
-    // selection_region_normalize();
 
     const selected_seats = selected_seats_compute();
 
@@ -407,7 +334,7 @@ function selected_seats_compute() {
     const {
         start: { gridX: startX, gridY: startY },
         end: { gridX: endX, gridY: endY },
-    } = selected_region//_normalized();
+    } = selected_region;
 
     if (Math.abs(endX - startX) < 1 || Math.abs(endY - startY) < 1) {
         return [];
@@ -465,8 +392,6 @@ function selected_seats_update(selected_seats) {
             }
             seat.draggable = true;
         } else {
-            // seat.dataset.selected = "";
-            // seat.style.transform = `translate(${selected_offset.gridX * gridCellPx}px, ${selected_offset.gridY * gridCellPx}px)`;
             seat_transform_set(
                 seat,
                 selected_offset.gridX,
@@ -479,6 +404,7 @@ function selected_seats_update(selected_seats) {
 }
 
 function closest_non_overlapping_pos(dragging_index, gridX, gridY) {
+    console.time("closest_non_overlapping_pos");
     function isValidPosition(gridX, gridY) {
         let is_not_overlapping = true;
         if (gridX < 0 || gridX > gridW - SEAT_GRID_W) return false;
@@ -498,7 +424,15 @@ function closest_non_overlapping_pos(dragging_index, gridX, gridY) {
         return is_not_overlapping;
     }
 
-    if (isValidPosition(gridX, gridY)) return { gridX, gridY };
+    if (isValidPosition(gridX, gridY)) {
+        console.timeEnd("closest_non_overlapping_pos");
+        return { gridX, gridY };
+    }
+
+    // NOTE: In order to make snap feel less erratic
+    // could track moment vector of dragging seat
+    // and sort directions by min angle between the dir and moment vectors
+    // OR just walk along moment vector
 
     const directions = [
         [1, 0],
@@ -517,6 +451,7 @@ function closest_non_overlapping_pos(dragging_index, gridX, gridY) {
             const newX = gridX + dx * distance;
             const newY = gridY + dy * distance;
             if (isValidPosition(newX, newY)) {
+                console.timeEnd("closest_non_overlapping_pos");
                 return { gridX: newX, gridY: newY };
             }
         }
@@ -524,9 +459,6 @@ function closest_non_overlapping_pos(dragging_index, gridX, gridY) {
     }
     throw new Error("No valid position found");
 }
-
-const SEAT_PROP_GRID_X = "--grid-x";
-const SEAT_PROP_GRID_Y = "--grid-y";
 
 /**
  * Set the transform on the seat
@@ -604,7 +536,6 @@ function seat_abs_loc_get(seat_ref) {
  * Set the transform and abs_loc on the seat
  */
 function seat_loc_set(seat_ref, gridX, gridY) {
-
     assert(seat_ref instanceof Element, "seat_ref is element", seat_ref);
 
     assert(Number.isSafeInteger(gridX), "gridX is number", gridX);
@@ -616,23 +547,39 @@ function seat_loc_set(seat_ref, gridX, gridY) {
     seat_transform_set(seat_ref, gridX, gridY);
 
     seat_abs_loc_set(seat_ref, gridX, gridY);
-
 }
 
-function seat_create() {
-    const id = next_draggable_id++;
+const SEAT_DATA_STUDENT_DROP_INDICATION = "studentdragover";
+
+function seat_student_drop_indication_enable(seat_ref) {
+    seat_ref.dataset[SEAT_DATA_STUDENT_DROP_INDICATION] = ""
+}
+
+function seat_student_drop_indication_disable(seat_ref) {
+    if (SEAT_DATA_STUDENT_DROP_INDICATION in seat_ref.dataset) {
+        delete seat_ref.dataset[SEAT_DATA_STUDENT_DROP_INDICATION]
+    }
+}
+
+function seat_create(gridX, gridY) {
+    const id = next_seat_id++;
     const element = document.createElement("div");
     const elementClassName =
-        "bg-indigo-400 border-2 border-indigo-500 text-center text-xl font-bold absolute data-[selected]:ring-2 data-[selected]:ring-blue-500";
+        "bg-indigo-400 border-2 border-indigo-500 text-center text-xl font-bold absolute data-[selected]:ring-2 data-[selected]:ring-blue-500 data-[studentdragover]:border-green-500 flex items-center justify-center";
     element.className = elementClassName;
     element.id = SEAT_ID_PREFIX + id;
-    element.innerText = id.toString();
+    // element.innerText = id.toString();
     element.draggable = true;
-    element.style.width = SEAT_GRID_W * gridCellPx + "px";
-    element.style.height = SEAT_GRID_H * gridCellPx + "px";
+    element.style.width = grid_cell_px_dim(SEAT_PROP_GRID_W);
+    element.style.height = grid_cell_px_dim(SEAT_PROP_GRID_H);
     element.dataset[SEAT_DATA_IDENTIFIER] = "";
     seat_refs.push(element);
-    seat_loc_set(element, 0, 0);
+    const { gridX: snapX, gridY: snapY } = closest_non_overlapping_pos(
+        id,
+        gridX,
+        gridY,
+    );
+    seat_loc_set(element, snapX, snapY);
 
     element.ondragstart = function (event) {
         console.log("DRAG SEAT START", element.dataset);
@@ -654,16 +601,8 @@ function seat_create() {
 
         {
             // create drag preview
-            const preview = document.createElement("div");
-            preview.className =
-                "bg-blue-300 border-2 border-blue-500 text-center text-xl font-bold absolute";
-            preview.style.width = SEAT_GRID_W * gridCellPx + "px";
-            preview.style.height = SEAT_GRID_H * gridCellPx + "px";
-            preview.style.transition = "transform 0.06s ease-out";
             const [seatGridX, seatGridY] = seat_transform_get(element);
-            seat_transform_set(preview, seatGridX, seatGridY);
-            preview.id = "drag-preview";
-            container.appendChild(preview);
+            preview_show(seatGridX, seatGridY);
         }
 
         element.style.zIndex = 999;
@@ -684,14 +623,16 @@ function seat_create() {
         const snapped_loc = closest_non_overlapping_pos(id, gridX, gridY);
 
         {
-            const preview = document.getElementById("drag-preview");
-            seat_transform_set(preview, snapped_loc.gridX, snapped_loc.gridY);
-            assert(preview != null, "preview not null");
+            assert(seat_preview != null, "preview not null");
+            seat_transform_set(seat_preview, snapped_loc.gridX, snapped_loc.gridY);
             // preview.style.transform = `translate(${snapped_loc.gridX * gridCellPx}px, ${snapped_loc.gridY * gridCellPx}px)`;
         }
     };
 
     element.ondragend = function (event) {
+
+        preview_hide();
+
         if (event.dataTransfer.dropEffect !== "none") {
             // drop succeeded
             return;
@@ -710,6 +651,63 @@ function seat_create() {
         seat_transform_revert_to_abs_loc(element);
         // const abs_loc = seat_abs_loc_get(element);
     };
+
+    element.ondragover = function (event) {
+        if (event.dataTransfer.getData(DRAG_DATA_TYPE_KIND) !== DRAG_DATA_TYPE_KIND_STUDENT) {
+            return
+        }
+
+            e.preventDefault()
+            e.stopPropagation()
+
+        console.log('student drag over', event.dataTransfer.getData(DRAG_DATA_TYPE_KIND))
+
+    }
+
+    element.ondragenter = function (event) {
+        console.log('student drag enter', `"${event.dataTransfer.types}"`)
+
+        if (!event.dataTransfer.types.includes("deskribe/student")) {
+            return;
+        }
+
+
+        seat_student_drop_indication_enable(event.target);
+    }
+
+    element.ondragleave = function (event) {
+        if (!event.dataTransfer.types.includes("deskribe/student")) {
+            return;
+        }
+
+        console.log('student drag leave', event.dataTransfer.getData('text/plain'))
+
+        seat_student_drop_indication_disable(event.target);
+    }
+
+    element.ondrop = function (event) {
+        console.log('student drop', `"${event.dataTransfer.getData(DRAG_DATA_TYPE_KIND)}"`)
+
+        if (event.dataTransfer.getData(DRAG_DATA_TYPE_KIND) !== DRAG_DATA_TYPE_KIND_STUDENT) {
+            return;
+        }
+
+        const student_index = Number.parseInt(event.dataTransfer.getData("text/plain"));
+
+        if (!Number.isSafeInteger(student_index)) {
+            console.error('no student index on student drop', event.dataTransfer)
+            // TODO: set error?
+            return;
+        }
+
+        const student = students[student_index]
+
+        student.className = STUDENT_CLASSLIST_SEATING
+        event.target.appendChild(student);
+        event.stopPropagation();
+
+        seat_student_drop_indication_disable(event.target);
+    }
 
     return element;
 }
@@ -761,10 +759,9 @@ function container_handle_drop_seat(event) {
     const element = seat_refs[id];
     assert(element != null, "element not null");
 
-    const preview = document.getElementById("drag-preview");
-    assert(preview != null, "preview not null");
+    assert(seat_preview != null, "preview not null");
 
-    const [gridX, gridY] = seat_transform_get(preview);
+    const [gridX, gridY] = seat_transform_get(seat_preview);
 
     seat_loc_set(element, gridX, gridY);
 
@@ -772,7 +769,8 @@ function container_handle_drop_seat(event) {
 
     container.appendChild(element);
 
-    preview.remove();
+    seat_preview.style.display = "none";
+    // seat_preview.remove();
 }
 
 function container_handle_drop_selection(event) {
@@ -837,9 +835,60 @@ container.ondrop = function (event) {
     // event.dataTransfer.clearData();
 };
 
-app.appendChild(container);
+const students = [];
+
+
+//////////////
+// STUDENTS //
+//////////////
+
+const sidebar = document.getElementById("sidebar");
+assert(sidebar != null, "sidebar not null");
+const sidebar_student_input = sidebar.querySelector("#student-name-input")
+const sidebar_student_add = sidebar.querySelector("#add-student-button")
+const sidebar_student_list = sidebar.querySelector("#students")
+
+const STUDENT_CLASSLIST_SIDEBAR = "ring-2 rounded-md w-40 h-8 flex items-center justify-center font-semibold text-xs bg-white text-black"
+
+const STUDENT_CLASSLIST_SEATING = "ring-2 ring-black rounded-md w-min px-2 py-1 flex items-center justify-center font-semibold text-xs bg-white text-black break-normal"
+
+function student_create(name) {
+    const student = document.createElement("div")
+    student.className = STUDENT_CLASSLIST_SIDEBAR
+    student.textContent = name
+
+    const student_index = students.length;
+    students.push(student);
+
+    student.draggable = true;
+
+    student.ondragstart = (ev) => {
+        ev.stopPropagation()
+        ev.dataTransfer.setData(DRAG_DATA_TYPE_KIND, DRAG_DATA_TYPE_KIND_STUDENT);
+        ev.dataTransfer.setData("text/plain", student_index)
+        ev.dataTransfer.setData("deskribe/student", "")
+
+        ev.target.className = STUDENT_CLASSLIST_SIDEBAR
+    }
+
+    // TODO: ondrop handler that uses one time transition like seat to animate smoothly back to it's original position AND resets className to STUDENT_CLASSLIST_SIDEBAR
+
+    return student
+}
+
+sidebar_student_add.onclick = () => {
+    const name = sidebar_student_input.value
+    if (!name) return;
+    sidebar_student_input.value = ""
+    sidebar_student_list.appendChild(student_create(name))
+    sidebar_student_input.focus()
+}
+
+
 containerDomRect = container.getBoundingClientRect();
 
+const center_grid_x = Math.floor(gridW / 2);
+const center_grid_y = Math.floor(gridH / 2);
 for (let i = 0; i < 10; i++) {
-    container.appendChild(seat_create());
+    container.appendChild(seat_create(center_grid_x, center_grid_y));
 }
