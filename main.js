@@ -39,7 +39,10 @@ const DRAG_DATA_TYPE_KIND = "application/kind";
 
 const DRAG_DATA_TYPE_KIND_SEAT = "seat";
 const DRAG_DATA_TYPE_KIND_SELECTION = "selection";
-const DRAG_DATA_TYPE_KIND_STUDENT = "student"
+const DRAG_DATA_TYPE_KIND_STUDENT = "student";
+
+// student
+const STUDENT_DATA_SEAT_INDEX = "seatindex";
 
 function assert(val, ...msg) {
     if (val) return;
@@ -69,9 +72,11 @@ container.style.setProperty(GRID_PROP_W, gridW);
 container.style.setProperty(GRID_PROP_H, gridH);
 container.style.width = grid_cell_px_dim(GRID_PROP_W);
 container.style.height = grid_cell_px_dim(GRID_PROP_H);
+
 container.ondragover = function (event) {
     event.preventDefault();
 };
+
 container.style.backgroundImage = `
                         linear-gradient(to right, #e5e5e5 1px, transparent 1px),
                         linear-gradient(to bottom, #e5e5e5 1px, transparent 1px)
@@ -101,7 +106,6 @@ selection.className = "absolute bg-blue-300/40 ring-2 ring-blue-500 z-5";
 selection.style.display = "none";
 selection.draggable = true;
 container.appendChild(selection);
-
 
 selection.ondragstart = function (event) {
     console.log("selection ondragstart");
@@ -208,7 +212,9 @@ function selection_update() {
         end: { gridX: endX, gridY: endY },
     } = selected_region;
 
-    selection.style.transform = `translate(${startX * gridCellPx}px, ${startY * gridCellPx}px)`;
+    selection.style.transform = `translate(${startX * gridCellPx}px, ${
+        startY * gridCellPx
+    }px)`;
     selection.style.width = Math.abs(endX - startX) * gridCellPx + "px";
     selection.style.height = Math.abs(endY - startY) * gridCellPx + "px";
 }
@@ -552,13 +558,93 @@ function seat_loc_set(seat_ref, gridX, gridY) {
 const SEAT_DATA_STUDENT_DROP_INDICATION = "studentdragover";
 
 function seat_student_drop_indication_enable(seat_ref) {
-    seat_ref.dataset[SEAT_DATA_STUDENT_DROP_INDICATION] = ""
+    seat_ref.dataset[SEAT_DATA_STUDENT_DROP_INDICATION] = "";
 }
 
 function seat_student_drop_indication_disable(seat_ref) {
     if (SEAT_DATA_STUDENT_DROP_INDICATION in seat_ref.dataset) {
-        delete seat_ref.dataset[SEAT_DATA_STUDENT_DROP_INDICATION]
+        delete seat_ref.dataset[SEAT_DATA_STUDENT_DROP_INDICATION];
     }
+}
+
+/**
+ * @param {HTMLElement} seat_ref
+ * @returns {HTMLElement | null}
+ */
+function seat_student_get(seat_ref) {
+    const students = seat_ref.querySelectorAll("[data-student]");
+    // FIXME: uncomment once swap implemented
+    // assert(students.length <= 1, "no more than 1 student per seat", students)
+    if (students.length === 0) {
+        return null;
+    }
+    return students[0];
+}
+
+/**
+ * @param {HTMLElement} seat_ref
+ * @param {HTMLElement} student_ref
+ */
+function seat_student_set(seat_ref, student_ref) {
+    student_ref.className = STUDENT_CLASSLIST_SEATING;
+    seat_ref.appendChild(student_ref);
+    const seat_index = seat_refs.indexOf(seat_ref);
+    assert(seat_index != -1, "seat_ref is in seat_refs", seat_ref, seat_refs);
+    student_ref.dataset[STUDENT_DATA_SEAT_INDEX] = seat_index;
+}
+
+/**
+ * @param {HTMLElement} seat_ref
+ * @returns {HTMLElement} student_ref
+ */
+function seat_student_pop(seat_ref) {
+    const student = seat_student_get(seat_ref);
+    if (student == null) {
+        return null;
+    }
+
+    assert(
+        STUDENT_DATA_SEAT_INDEX in student.dataset,
+        "seat-index in student dataset",
+        student.dataset,
+    );
+
+    delete student.dataset[STUDENT_DATA_SEAT_INDEX];
+    return student;
+}
+
+/**
+ * @param {HTMLElement} dest_seat_ref
+ * @param {HTMLElement} student_ref
+ */
+function seat_student_transfer(dest_seat_ref, student_ref) {
+    const student_in_seat_ref = seat_student_get(dest_seat_ref);
+
+    const original_seat_ref = student_get_seat(student_ref);
+    if (original_seat_ref) {
+        const original_student_ref = seat_student_pop(original_seat_ref);
+        assert(
+            original_student_ref == student_ref,
+            "student in original seat and transferring student are the same student",
+        );
+
+        if (student_in_seat_ref) {
+            // move student in dest to the incoming students original seat
+            elem_animate_move(student_in_seat_ref, () => {
+                seat_student_pop(dest_seat_ref);
+                seat_student_set(original_seat_ref, student_in_seat_ref);
+            });
+            // seat_student_set(original_seat_ref, student_in_seat_ref);
+        }
+    } else if (student_in_seat_ref) {
+        // move student in seat to sidebar if thats where incomming student
+        // came from
+        elem_animate_move(student_in_seat_ref, () =>
+            student_make_unseated(student_in_seat_ref),
+        );
+    }
+
+    seat_student_set(dest_seat_ref, student_ref);
 }
 
 function seat_create(gridX, gridY) {
@@ -624,13 +710,16 @@ function seat_create(gridX, gridY) {
 
         {
             assert(seat_preview != null, "preview not null");
-            seat_transform_set(seat_preview, snapped_loc.gridX, snapped_loc.gridY);
+            seat_transform_set(
+                seat_preview,
+                snapped_loc.gridX,
+                snapped_loc.gridY,
+            );
             // preview.style.transform = `translate(${snapped_loc.gridX * gridCellPx}px, ${snapped_loc.gridY * gridCellPx}px)`;
         }
     };
 
     element.ondragend = function (event) {
-
         preview_hide();
 
         if (event.dataTransfer.dropEffect !== "none") {
@@ -639,81 +728,208 @@ function seat_create(gridX, gridY) {
         }
         // drop failed
 
-        // note following can be extracted to it's own function
-        // apply_onetime_transition(el, transition)
-        const transition = "transform 0.3s ease-out";
-        element.style.transition = transition;
-        element.ontransitionend = () => {
-            if (element.style.transition === transition) {
-                element.style.transition = "";
-            }
-        };
+        elem_apply_onetime_transition(
+            event.currentTarget,
+            "transform 0.3s ease-out",
+        );
         seat_transform_revert_to_abs_loc(element);
         // const abs_loc = seat_abs_loc_get(element);
     };
 
     element.ondragover = function (event) {
-        if (event.dataTransfer.getData(DRAG_DATA_TYPE_KIND) !== DRAG_DATA_TYPE_KIND_STUDENT) {
-            return
+        if (
+            event.dataTransfer.getData(DRAG_DATA_TYPE_KIND) !==
+            DRAG_DATA_TYPE_KIND_STUDENT
+        ) {
+            return;
         }
 
-            e.preventDefault()
-            e.stopPropagation()
+        e.preventDefault();
+        // e.stopPropagation()
 
-        console.log('student drag over', event.dataTransfer.getData(DRAG_DATA_TYPE_KIND))
-
-    }
+        console.log(
+            "student drag over",
+            event.dataTransfer.getData(DRAG_DATA_TYPE_KIND),
+        );
+    };
 
     element.ondragenter = function (event) {
-        console.log('student drag enter', `"${event.dataTransfer.types}"`)
+        console.log("student drag enter", `"${event.dataTransfer.types}"`);
 
         if (!event.dataTransfer.types.includes("deskribe/student")) {
             return;
         }
 
-
         seat_student_drop_indication_enable(event.target);
-    }
+    };
 
     element.ondragleave = function (event) {
         if (!event.dataTransfer.types.includes("deskribe/student")) {
             return;
         }
 
-        console.log('student drag leave', event.dataTransfer.getData('text/plain'))
-
-        seat_student_drop_indication_disable(event.target);
-    }
-
-    element.ondrop = function (event) {
-        console.log('student drop', `"${event.dataTransfer.getData(DRAG_DATA_TYPE_KIND)}"`)
-
-        if (event.dataTransfer.getData(DRAG_DATA_TYPE_KIND) !== DRAG_DATA_TYPE_KIND_STUDENT) {
+        const seat_student = seat_student_get(event.currentTarget);
+        if (
+            (seat_student && event.composedPath().includes(seat_student)) ||
+            event.relatedTarget === seat_student
+        ) {
+            console.log("ignoring drag leave that passed through student");
             return;
         }
 
-        const student_index = Number.parseInt(event.dataTransfer.getData("text/plain"));
+        console.log("student drag leave", event);
+
+        seat_student_drop_indication_disable(event.currentTarget);
+    };
+
+    element.ondrop = function (event) {
+        const seat_ref = event.currentTarget;
+
+        console.log(
+            "student drop",
+            `"${event.dataTransfer.getData(DRAG_DATA_TYPE_KIND)}"`,
+        );
+
+        if (
+            event.dataTransfer.getData(DRAG_DATA_TYPE_KIND) !==
+            DRAG_DATA_TYPE_KIND_STUDENT
+        ) {
+            return;
+        }
+
+        const student_index = Number.parseInt(
+            event.dataTransfer.getData("text/plain"),
+        );
 
         if (!Number.isSafeInteger(student_index)) {
-            console.error('no student index on student drop', event.dataTransfer)
+            console.error(
+                "no student index on student drop",
+                event.dataTransfer,
+            );
             // TODO: set error?
             return;
         }
 
-        const student = students[student_index]
+        const student_ref = students[student_index];
+        seat_student_transfer(seat_ref, student_ref);
 
-        student.className = STUDENT_CLASSLIST_SEATING
-        event.target.appendChild(student);
         event.stopPropagation();
 
-        seat_student_drop_indication_disable(event.target);
-    }
+        seat_student_drop_indication_disable(seat_ref);
+    };
 
     return element;
 }
 
 function clamp(n, min, max) {
     return Math.max(min, Math.min(n, max));
+}
+
+/**
+ * @param {HTMLElement} elem
+ * @param {string} transition
+ */
+function elem_apply_onetime_transition(elem, transition) {
+    let had_transition = false;
+    if (elem.style.transition) {
+        had_transition = true;
+        elem.style.setProperty("--prev-transition", elem.style.transition);
+    }
+    elem.style.transition = transition;
+
+    elem.ontransitionend = () => {
+        if (elem.style.transition === transition) {
+            const prev = elem.style.getPropertyValue("--prev-transition");
+            if (prev) {
+                assert(
+                    had_transition,
+                    "if prev then there shouldv'e been a transition",
+                );
+                elem.style.transition = prev;
+            } else {
+                assert(
+                    !had_transition,
+                    "if no prev then there shouldn't have been transition",
+                );
+                delete elem.style.transition;
+            }
+        }
+    };
+}
+
+/**
+ * @param {HTMLElement} element
+ * @param {() => void} move
+ */
+function elem_animate_move(element, move) {
+    // debugger
+    // Step 1: Get the initial position
+    const initialRect = element.getBoundingClientRect();
+
+    const elevated_container = document.createElement('div')
+    elevated_container.style.zIndex = 999
+    elevated_container.style.position = 'absolute'
+    elevated_container.className = "w-full h-full"
+    elevated_container.style.top = 0;
+    elevated_container.style.left = 0;
+    const elevated_container_inner = document.createElement('div')
+    elevated_container_inner.style.position = 'relative'
+    elevated_container_inner.className = "w-full h-full"
+    elevated_container.appendChild(elevated_container_inner)
+    document.body.appendChild(elevated_container)
+
+    // Step 2: Move the element to the new container
+    move();
+
+    // Step 3: Calculate the difference
+    const finalRect = element.getBoundingClientRect();
+    const deltaX = initialRect.left - finalRect.left;
+    const deltaY = initialRect.top - finalRect.top;
+
+    const final_parent = element.parentElement
+    const final_next_sibling = element.nextElementSibling
+
+    const element_prev_position = element.style.position
+    element.style.position = "absolute"
+    element.style.top = initialRect.top - deltaY + 'px'
+    element.style.left = initialRect.left - deltaX + 'px'
+    elevated_container_inner.appendChild(element)
+
+
+    // Step 4: Apply the inverse transform
+    assert(!element.style.transform, "overwriting transform");
+    element.style.transform = `translate(${deltaX}px, ${deltaY}px)`;
+    element.style.transition = "transform 0s";
+
+    // Force a repaint
+    element.offsetWidth;
+
+    const distance = Math.sqrt(
+        Math.pow(finalRect.left - initialRect.left, 2) +
+            Math.pow(finalRect.top - initialRect.top, 2),
+    );
+
+    const duration = distance / 250
+
+    // Step 5: Remove the transform with a transition
+    element.style.transform = "";
+    element.style.transition = `transform ${duration}s`;
+
+    // Optional: Clean up styles after animation
+    element.addEventListener("transitionend", function cleanUp() {
+        element.style.transition = "";
+        element.style.display = element_prev_position
+        delete element.style.top
+        delete element.style.left
+        element.removeEventListener("transitionend", cleanUp);
+
+        if (final_next_sibling) {
+            final_next_sibling.insertBefore(element)
+        } else {
+            final_parent.appendChild(element)
+        }
+        document.body.removeChild(elevated_container)
+    });
 }
 
 function elem_drag_offset_set(elem, clientX, clientY) {
@@ -835,8 +1051,60 @@ container.ondrop = function (event) {
     // event.dataTransfer.clearData();
 };
 
-const students = [];
+/**
+ * make an element invisible without unmounting from dom to preserve
+ * drag. Attempts to save style properties that may or may not exist already
+ * @param {HTMLElement} elem
+ */
+function elem_make_invisible(elem) {
+    if (elem.dataset["invisible"]) {
+        return;
+    }
+    function store_and_clear_style(name, clear_value) {
+        const prev_value_name = "--prev-visible-" + name;
+        const value = elem.style.getPropertyValue(name);
 
+        console.log("clearing", name, value);
+        if (value) {
+            elem.style.setProperty(prev_value_name, value);
+        }
+
+        if (clear_value) {
+            elem.style.setProperty(name, clear_value);
+        } else {
+            elem.style.removeProperty(name);
+        }
+    }
+
+    elem.dataset["invisible"] = "true";
+
+    store_and_clear_style("background-image");
+    store_and_clear_style("background-color", "transparent");
+    store_and_clear_style("color", "transparent");
+    store_and_clear_style("box-shadow", "0px 0px 0px rgba(0, 0, 0, 0)");
+}
+
+function elem_make_visible(elem) {
+    function restore_style(name) {
+        const prev_value_name = "--prev-visible-" + name;
+        const prev_value = elem.style.getPropertyValue(prev_value_name);
+        if (prev_value) {
+            elem.style.setProperty(name, prev_value);
+            elem.style.removeProperty(prev_value_name);
+        } else if (elem.style.getPropertyValue(name)) {
+            elem.style.removeProperty(name);
+        }
+    }
+
+    delete elem.dataset["invisible"];
+
+    restore_style("background-image");
+    restore_style("background-color");
+    restore_style("color");
+    restore_style("box-shadow");
+}
+
+const students = [];
 
 //////////////
 // STUDENTS //
@@ -844,46 +1112,106 @@ const students = [];
 
 const sidebar = document.getElementById("sidebar");
 assert(sidebar != null, "sidebar not null");
-const sidebar_student_input = sidebar.querySelector("#student-name-input")
-const sidebar_student_add = sidebar.querySelector("#add-student-button")
-const sidebar_student_list = sidebar.querySelector("#students")
+const sidebar_student_input = sidebar.querySelector("#student-name-input");
+const sidebar_student_add = sidebar.querySelector("#add-student-button");
+const sidebar_student_list = sidebar.querySelector("#students");
 
-const STUDENT_CLASSLIST_SIDEBAR = "ring-2 rounded-md w-40 h-8 flex items-center justify-center font-semibold text-xs bg-white text-black"
+const STUDENT_CLASSLIST_SIDEBAR =
+    "ring-2 rounded-md w-40 h-8 flex items-center justify-center font-semibold text-xs bg-white text-black";
 
-const STUDENT_CLASSLIST_SEATING = "ring-2 ring-black rounded-md w-min px-2 py-1 flex items-center justify-center font-semibold text-xs bg-white text-black break-normal"
+const STUDENT_CLASSLIST_SEATING =
+    "ring-2 ring-black rounded-md w-min px-2 py-1 flex items-center justify-center font-semibold text-xs bg-white text-black break-normal";
+
+function student_get_seat(student_ref) {
+    const seat_index_str = student_ref.dataset[STUDENT_DATA_SEAT_INDEX];
+    if (!seat_index_str) {
+        return null;
+    }
+    const seat_index = Number.parseInt(seat_index_str);
+    assert(
+        Number.isSafeInteger(seat_index),
+        "seat_index is safe integer",
+        seat_index,
+    );
+
+    return seat_refs[seat_index];
+}
+
+function student_make_unseated(student_ref) {
+    student_ref.className = STUDENT_CLASSLIST_SIDEBAR;
+    sidebar_student_list.appendChild(student_ref);
+}
 
 function student_create(name) {
-    const student = document.createElement("div")
-    student.className = STUDENT_CLASSLIST_SIDEBAR
-    student.textContent = name
+    const student = document.createElement("div");
+    student.className = STUDENT_CLASSLIST_SIDEBAR;
+    student.textContent = name;
+    student.dataset["student"] = "";
 
     const student_index = students.length;
     students.push(student);
 
     student.draggable = true;
 
-    student.ondragstart = (ev) => {
-        ev.stopPropagation()
-        ev.dataTransfer.setData(DRAG_DATA_TYPE_KIND, DRAG_DATA_TYPE_KIND_STUDENT);
-        ev.dataTransfer.setData("text/plain", student_index)
-        ev.dataTransfer.setData("deskribe/student", "")
+    student.ondragstart = function (event) {
+        event.stopPropagation();
 
-        ev.target.className = STUDENT_CLASSLIST_SIDEBAR
-    }
+        const student_ref = event.currentTarget;
+
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData(
+            DRAG_DATA_TYPE_KIND,
+            DRAG_DATA_TYPE_KIND_STUDENT,
+        );
+        event.dataTransfer.setData("text/plain", student_index);
+        event.dataTransfer.setData("deskribe/student", "");
+
+        student_ref.className = STUDENT_CLASSLIST_SIDEBAR;
+        student_ref.style.zIndex = 50;
+
+        // event.dataTransfer.setDragImage(invisible_drag_preview, 0, 0);
+        // elem_drag_offset_set(event.target, event.clientX, event.clientY);
+        // document.body.appendChild(event.target)
+    };
+
+    student.ondrag = function (event) {
+        elem_make_invisible(event.target);
+        event.stopPropagation();
+
+        // assert(containerDomRect != null, "containerDomRect not null");
+        //
+        // const [offsetX, offsetY] = elem_drag_offset_get(event.target);
+        //
+        // const x = event.clientX - containerDomRect.left - offsetX;
+        // const y = event.clientY - containerDomRect.top - offsetY;
+        //
+        // event.target.style.transform = `translate(${x}px, ${y}px)`;
+    };
+
+    student.ondragover = function (event) {
+        console.log("dragging over student");
+        event.preventDefault();
+    };
 
     // TODO: ondrop handler that uses one time transition like seat to animate smoothly back to it's original position AND resets className to STUDENT_CLASSLIST_SIDEBAR
 
-    return student
+    student.ondragend = function (event) {
+        console.log("student drag end");
+        elem_make_visible(event.target);
+        // event.target.style.zIndex = 0;
+        // delete event.target.style.transform
+    };
+
+    return student;
 }
 
 sidebar_student_add.onclick = () => {
-    const name = sidebar_student_input.value
+    const name = sidebar_student_input.value;
     if (!name) return;
-    sidebar_student_input.value = ""
-    sidebar_student_list.appendChild(student_create(name))
-    sidebar_student_input.focus()
-}
-
+    sidebar_student_input.value = "";
+    sidebar_student_list.appendChild(student_create(name));
+    sidebar_student_input.focus();
+};
 
 containerDomRect = container.getBoundingClientRect();
 
