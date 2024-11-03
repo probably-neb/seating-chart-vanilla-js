@@ -410,7 +410,7 @@ function selected_seats_update(selected_seats) {
 }
 
 function closest_non_overlapping_pos(dragging_index, gridX, gridY) {
-    console.time("closest_non_overlapping_pos");
+    // console.time("closest_non_overlapping_pos");
     function isValidPosition(gridX, gridY) {
         let is_not_overlapping = true;
         if (gridX < 0 || gridX > gridW - SEAT_GRID_W) return false;
@@ -431,7 +431,7 @@ function closest_non_overlapping_pos(dragging_index, gridX, gridY) {
     }
 
     if (isValidPosition(gridX, gridY)) {
-        console.timeEnd("closest_non_overlapping_pos");
+        // console.timeEnd("closest_non_overlapping_pos");
         return { gridX, gridY };
     }
 
@@ -457,7 +457,7 @@ function closest_non_overlapping_pos(dragging_index, gridX, gridY) {
             const newX = gridX + dx * distance;
             const newY = gridY + dy * distance;
             if (isValidPosition(newX, newY)) {
-                console.timeEnd("closest_non_overlapping_pos");
+                // console.timeEnd("closest_non_overlapping_pos");
                 return { gridX: newX, gridY: newY };
             }
         }
@@ -763,14 +763,9 @@ function seat_create(gridX, gridY) {
         e.preventDefault();
         // e.stopPropagation()
 
-        console.log(
-            "student drag over",
-            event.dataTransfer.getData(DRAG_DATA_TYPE_KIND),
-        );
     };
 
     element.ondragenter = function (event) {
-        console.log("student drag enter", `"${event.dataTransfer.types}"`);
 
         if (!event.dataTransfer.types.includes("deskribe/student")) {
             return;
@@ -789,22 +784,15 @@ function seat_create(gridX, gridY) {
             (seat_student && event.composedPath().includes(seat_student)) ||
             event.relatedTarget === seat_student
         ) {
-            console.log("ignoring drag leave that passed through student");
             return;
         }
 
-        console.log("student drag leave", event);
 
         seat_student_drop_indication_disable(event.currentTarget);
     };
 
     element.ondrop = function (event) {
         const seat_ref = event.currentTarget;
-
-        console.log(
-            "student drop",
-            `"${event.dataTransfer.getData(DRAG_DATA_TYPE_KIND)}"`,
-        );
 
         if (
             event.dataTransfer.getData(DRAG_DATA_TYPE_KIND) !==
@@ -817,14 +805,10 @@ function seat_create(gridX, gridY) {
             event.dataTransfer.getData("text/plain"),
         );
 
-        if (!Number.isSafeInteger(student_index)) {
-            console.error(
-                "no student index on student drop",
+        assert(Number.isSafeInteger(student_index),
+                "student index exists on student on drop",
                 event.dataTransfer,
-            );
-            // TODO: set error?
-            return;
-        }
+        )
 
         const student_ref = students[student_index];
         seat_student_transfer(seat_ref, student_ref);
@@ -1182,7 +1166,6 @@ function elem_make_invisible(elem) {
         const prev_value_name = "--prev-visible-" + name;
         const value = elem.style.getPropertyValue(name);
 
-        console.log("clearing", name, value);
         if (value) {
             elem.style.setProperty(prev_value_name, value);
         }
@@ -1301,13 +1284,11 @@ function student_create(name) {
     };
 
     student.ondragover = function (event) {
-        console.log("dragging over student");
         event.preventDefault();
     };
 
     student.ondragend = function (event) {
         const student_ref = event.currentTarget;
-        console.log("student drag end");
         elem_make_visible(student_ref);
     };
 
