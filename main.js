@@ -621,6 +621,11 @@ function seat_student_transfer(dest_seat_ref, student_ref) {
     const student_in_seat_ref = seat_student_get(dest_seat_ref);
 
     const original_seat_ref = student_get_seat(student_ref);
+
+    if (original_seat_ref === dest_seat_ref) {
+        return
+    }
+
     if (original_seat_ref) {
         const original_student_ref = seat_student_pop(original_seat_ref);
         assert(
@@ -629,11 +634,22 @@ function seat_student_transfer(dest_seat_ref, student_ref) {
         );
 
         if (student_in_seat_ref) {
+            const center = true;
             // move student in dest to the incoming students original seat
-            elem_animate_move(student_in_seat_ref, () => {
-                seat_student_pop(dest_seat_ref);
-                seat_student_set(original_seat_ref, student_in_seat_ref);
-            });
+            elem_animate_move(
+                student_in_seat_ref,
+                () => {
+                    const also_student_in_seat_ref =
+                        seat_student_pop(dest_seat_ref);
+                    assert(
+                        also_student_in_seat_ref === student_in_seat_ref,
+                        "student in seat did not change",
+                        { also_student_in_seat_ref, student_in_seat_ref },
+                    );
+                    seat_student_set(original_seat_ref, student_in_seat_ref);
+                },
+                center,
+            );
             // seat_student_set(original_seat_ref, student_in_seat_ref);
         }
     } else if (student_in_seat_ref) {
@@ -837,64 +853,79 @@ function elem_apply_onetime_transition(elem, transition) {
     }
     elem.style.transition = transition;
 
-    elem.ontransitionend = () => {
-        if (elem.style.transition === transition) {
-            const prev = elem.style.getPropertyValue("--prev-transition");
-            if (prev) {
-                assert(
-                    had_transition,
-                    "if prev then there shouldv'e been a transition",
-                );
-                elem.style.transition = prev;
-            } else {
-                assert(
-                    !had_transition,
-                    "if no prev then there shouldn't have been transition",
-                );
-                delete elem.style.transition;
-            }
+    elem.addEventListener("transitionend", function cleanUp() {
+        if (elem.style.transition !== transition) {
+            return;
         }
-    };
+        const prev = elem.style.getPropertyValue("--prev-transition");
+        if (prev) {
+            assert(
+                had_transition,
+                "if prev then there shouldv'e been a transition",
+            );
+            elem.style.transition = prev;
+        } else {
+            assert(
+                !had_transition,
+                "if no prev then there shouldn't have been transition",
+            );
+            delete elem.style.transition;
+        }
+        element.removeEventListener("transitionend", cleanUp);
+    });
 }
 
 /**
  * @param {HTMLElement} element
  * @param {() => void} move
+ * @param {HTMLElement} swapping_with
  */
-function elem_animate_move(element, move) {
+function elem_animate_move_swap(element, move, swapping_with) {
+    // get swapping_with rect first so that the {top,left} values
+    // are not effected by the element getting moved
+    const final_elem_rect = swapping_with.getBoundingClientRect();
+
     // debugger
     // Step 1: Get the initial position
     const initialRect = element.getBoundingClientRect();
 
-    const elevated_container = document.createElement('div')
-    elevated_container.style.zIndex = 999
-    elevated_container.style.position = 'absolute'
-    elevated_container.className = "w-full h-full"
+    // PERF: store elevated container in dom (hidden) instead
+    // of recreating on each animated move
+    const elevated_container = document.createElement("div");
+    elevated_container.style.zIndex = 999;
+    elevated_container.style.position = "absolute";
+    elevated_container.className = "w-full h-full";
     elevated_container.style.top = 0;
     elevated_container.style.left = 0;
-    const elevated_container_inner = document.createElement('div')
-    elevated_container_inner.style.position = 'relative'
-    elevated_container_inner.className = "w-full h-full"
-    elevated_container.appendChild(elevated_container_inner)
-    document.body.appendChild(elevated_container)
+    const elevated_container_inner = document.createElement("div");
+    elevated_container_inner.style.position = "relative";
+    elevated_container_inner.className = "w-full h-full";
+    elevated_container.appendChild(elevated_container_inner);
+    document.body.appendChild(elevated_container);
 
     // Step 2: Move the element to the new container
     move();
 
     // Step 3: Calculate the difference
-    const finalRect = element.getBoundingClientRect();
-    const deltaX = initialRect.left - finalRect.left;
-    const deltaY = initialRect.top - finalRect.top;
 
-    const final_parent = element.parentElement
-    const final_next_sibling = element.nextElementSibling
+    // FIXME: adjust final_rect_{x,y} by difference between
+    // element and swapping_with elements bounding boxes
+    // to account for possible difference in size between the 
+    // two elements
+    let final_rect_x = final_elem_rect.left;
+    let final_rect_y = final_elem_rect.top;
 
-    const element_prev_position = element.style.position
-    element.style.position = "absolute"
-    element.style.top = initialRect.top - deltaY + 'px'
-    element.style.left = initialRect.left - deltaX + 'px'
-    elevated_container_inner.appendChild(element)
+    const deltaX = initialRect.left - final_rect_x;
+    const deltaY = initialRect.top - final_rect_y;
 
+    const final_parent = element.parentElement;
+    const final_next_sibling = element.nextElementSibling;
+
+    const element_prev_position = element.style.position;
+    element.style.position = "absolute";
+    element.style.top = initialRect.top - deltaY + "px";
+    element.style.left = initialRect.left - deltaX + "px";
+    elevated_container_inner.appendChild(element);
 
     // Step 4: Apply the inverse transform
     assert(!element.style.transform, "overwriting transform");
@@ -905,11 +936,11 @@ function elem_animate_move(element, move) {
     element.offsetWidth;
 
     const distance = Math.sqrt(
-        Math.pow(finalRect.left - initialRect.left, 2) +
-            Math.pow(finalRect.top - initialRect.top, 2),
+        Math.pow(final_rect_x - initialRect.left, 2) +
+            Math.pow(final_rect_y - initialRect.top, 2),
     );
 
-    const duration = distance / 250
+    const duration = distance / 300;
 
     // Step 5: Remove the transform with a transition
     element.style.transform = "";
@@ -918,17 +949,106 @@ function elem_animate_move(element, move) {
     // Optional: Clean up styles after animation
     element.addEventListener("transitionend", function cleanUp() {
         element.style.transition = "";
-        element.style.display = element_prev_position
-        delete element.style.top
-        delete element.style.left
+        element.style.position = element_prev_position;
+        delete element.style.top;
+        delete element.style.left;
         element.removeEventListener("transitionend", cleanUp);
 
         if (final_next_sibling) {
-            final_next_sibling.insertBefore(element)
+            final_next_sibling.insertBefore(element);
         } else {
-            final_parent.appendChild(element)
+            final_parent.appendChild(element);
         }
-        document.body.removeChild(elevated_container)
+        document.body.removeChild(elevated_container);
+    });
+}
+/**
+ * @param {HTMLElement} element
+ * @param {() => void} move
+ */
+function elem_animate_move(element, move, center = false) {
+    // debugger
+    // Step 1: Get the initial position
+    const initialRect = element.getBoundingClientRect();
+
+    const elevated_container = document.createElement("div");
+    elevated_container.style.zIndex = 999;
+    elevated_container.style.position = "absolute";
+    elevated_container.className = "w-full h-full";
+    elevated_container.style.top = 0;
+    elevated_container.style.left = 0;
+    const elevated_container_inner = document.createElement("div");
+    elevated_container_inner.style.position = "relative";
+    elevated_container_inner.className = "w-full h-full";
+    elevated_container.appendChild(elevated_container_inner);
+    document.body.appendChild(elevated_container);
+
+    // Step 2: Move the element to the new container
+    move();
+
+    // Step 3: Calculate the difference
+
+    const final_elem_rect = element.getBoundingClientRect();
+
+    let final_rect_x;
+    let final_rect_y;
+    if (center) {
+        const final_parent_rect = element.parentElement.getBoundingClientRect();
+        const parent_mid_x =
+            final_parent_rect.left + final_parent_rect.width / 2;
+        const parent_mid_y =
+            final_parent_rect.top + final_parent_rect.height / 2;
+        final_rect_x = parent_mid_x - final_elem_rect.width / 2;
+        final_rect_y = parent_mid_y - final_elem_rect.height / 2;
+    } else {
+        final_rect_x = final_elem_rect.left;
+        final_rect_y = final_elem_rect.top;
+    }
+    const deltaX = initialRect.left - final_rect_x;
+    const deltaY = initialRect.top - final_rect_y;
+
+    const final_parent = element.parentElement;
+    const final_next_sibling = element.nextElementSibling;
+
+    const element_prev_position = element.style.position;
+    element.style.position = "absolute";
+    element.style.top = initialRect.top - deltaY + "px";
+    element.style.left = initialRect.left - deltaX + "px";
+    elevated_container_inner.appendChild(element);
+
+    // Step 4: Apply the inverse transform
+    assert(!element.style.transform, "overwriting transform");
+    element.style.transform = `translate(${deltaX}px, ${deltaY}px)`;
+    element.style.transition = "transform 0s";
+
+    // Force a repaint
+    element.offsetWidth;
+
+    const distance = Math.sqrt(
+        Math.pow(final_rect_x - initialRect.left, 2) +
+            Math.pow(final_rect_y - initialRect.top, 2),
+    );
+
+    const duration = distance / 300;
+
+    // Step 5: Remove the transform with a transition
+    element.style.transform = "";
+    element.style.transition = `transform ${duration}s`;
+
+    // Optional: Clean up styles after animation
+    element.addEventListener("transitionend", function cleanUp() {
+        element.style.transition = "";
+        element.style.position = element_prev_position;
+        delete element.style.top;
+        delete element.style.left;
+        element.removeEventListener("transitionend", cleanUp);
+
+        if (final_next_sibling) {
+            final_next_sibling.insertBefore(element);
+        } else {
+            final_parent.appendChild(element);
+        }
+        document.body.removeChild(elevated_container);
     });
 }
 
@@ -986,7 +1106,6 @@ function container_handle_drop_seat(event) {
     container.appendChild(element);
 
     seat_preview.style.display = "none";
-    // seat_preview.remove();
 }
 
 function container_handle_drop_selection(event) {
@@ -1048,7 +1167,6 @@ container.ondrop = function (event) {
             console.warn("unknown drop kind:", `'${kind}'`);
             return;
     }
-    // event.dataTransfer.clearData();
 };
 
 /**
@@ -1082,6 +1200,7 @@ function elem_make_invisible(elem) {
     store_and_clear_style("background-color", "transparent");
     store_and_clear_style("color", "transparent");
     store_and_clear_style("box-shadow", "0px 0px 0px rgba(0, 0, 0, 0)");
+    store_and_clear_style("border-color", "transparent")
 }
 
 function elem_make_visible(elem) {
@@ -1102,6 +1221,7 @@ function elem_make_visible(elem) {
     restore_style("background-color");
     restore_style("color");
     restore_style("box-shadow");
+    restore_style("border-color")
 }
 
 const students = [];
@@ -1120,7 +1240,7 @@ const STUDENT_CLASSLIST_SIDEBAR =
     "ring-2 rounded-md w-40 h-8 flex items-center justify-center font-semibold text-xs bg-white text-black";
 
 const STUDENT_CLASSLIST_SEATING =
-    "ring-2 ring-black rounded-md w-min px-2 py-1 flex items-center justify-center font-semibold text-xs bg-white text-black break-normal";
+    "border-2 border-black rounded-md w-min px-2 py-1 flex items-center justify-center font-semibold text-xs bg-white text-black break-normal";
 
 function student_get_seat(student_ref) {
     const seat_index_str = student_ref.dataset[STUDENT_DATA_SEAT_INDEX];
@@ -1140,6 +1260,12 @@ function student_get_seat(student_ref) {
 function student_make_unseated(student_ref) {
     student_ref.className = STUDENT_CLASSLIST_SIDEBAR;
     sidebar_student_list.appendChild(student_ref);
+    assert(
+        STUDENT_DATA_SEAT_INDEX in student_ref.dataset,
+        "student to be unseated must be in seat",
+        student_ref,
+    );
+    delete student_ref.dataset[STUDENT_DATA_SEAT_INDEX];
 }
 
 function student_create(name) {
@@ -1166,26 +1292,12 @@ function student_create(name) {
         event.dataTransfer.setData("text/plain", student_index);
         event.dataTransfer.setData("deskribe/student", "");
 
-        student_ref.className = STUDENT_CLASSLIST_SIDEBAR;
         student_ref.style.zIndex = 50;
-
-        // event.dataTransfer.setDragImage(invisible_drag_preview, 0, 0);
-        // elem_drag_offset_set(event.target, event.clientX, event.clientY);
-        // document.body.appendChild(event.target)
     };
 
     student.ondrag = function (event) {
         elem_make_invisible(event.target);
         event.stopPropagation();
-
-        // assert(containerDomRect != null, "containerDomRect not null");
-        //
-        // const [offsetX, offsetY] = elem_drag_offset_get(event.target);
-        //
-        // const x = event.clientX - containerDomRect.left - offsetX;
-        // const y = event.clientY - containerDomRect.top - offsetY;
-        //
-        // event.target.style.transform = `translate(${x}px, ${y}px)`;
     };
 
     student.ondragover = function (event) {
@@ -1193,13 +1305,10 @@ function student_create(name) {
         event.preventDefault();
     };
 
-    // TODO: ondrop handler that uses one time transition like seat to animate smoothly back to it's original position AND resets className to STUDENT_CLASSLIST_SIDEBAR
-
     student.ondragend = function (event) {
+        const student_ref = event.currentTarget;
         console.log("student drag end");
-        elem_make_visible(event.target);
-        // event.target.style.zIndex = 0;
-        // delete event.target.style.transform
+        elem_make_visible(student_ref);
     };
 
     return student;
