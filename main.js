@@ -1,5 +1,6 @@
 import "./style.css";
 
+
 // grid
 const gridW = 60;
 const gridH = 30;
@@ -44,11 +45,20 @@ const DRAG_DATA_TYPE_KIND_STUDENT = "student";
 // student
 const STUDENT_DATA_SEAT_INDEX = "seatindex";
 
+// zoom
+const ZOOM_BTN_SCALE_FACTOR = 0.1
+const ZOOM_DISPLAY_ID = "zoom-display"
+
 function assert(val, ...msg) {
     if (val) return;
     console.error("Assertion failed: ", ...msg);
     throw new Error("Assertion failed: " + msg?.map(String).join(" ") ?? "");
 }
+
+Number.isSafeFloat = function (val) {
+    return Number.isFinite(val) && !Number.isNaN(val)
+}
+
 
 function grid_cell_px_dim(v) {
     return `calc(var(--grid-cell-px) * var(${v}))`;
@@ -63,7 +73,6 @@ app.appendChild(invisible_drag_preview);
 
 const container = document.getElementById("container");
 assert(container != null, "container not null");
-container.id = "canvas";
 container.className = "relative bg-white";
 container.style.setProperty("--grid-cell-px", gridCellPx + "px");
 container.style.setProperty(SEAT_PROP_GRID_W, SEAT_GRID_W);
@@ -78,10 +87,61 @@ container.ondragover = function (event) {
 };
 
 container.style.backgroundImage = `
-                        linear-gradient(to right, #e5e5e5 1px, transparent 1px),
-                        linear-gradient(to bottom, #e5e5e5 1px, transparent 1px)
-                    `;
+    linear-gradient(to right, #e5e5e5 1px, transparent 1px),
+    linear-gradient(to bottom, #e5e5e5 1px, transparent 1px)
+`;
+
 container.style.backgroundSize = `var(--grid-cell-px) var(--grid-cell-px)`;
+
+const CONTAINER_PROP_SCALE = '--scale'
+
+function grid_cell_px_adjust(factor) {
+    const current_scale = Number.parseFloat(container.style.getPropertyValue(CONTAINER_PROP_SCALE) || "1")
+
+    assert(Number.isSafeFloat(current_scale), "current_scale is safe float", current_scale);
+
+    const desired_scale = current_scale + factor
+
+    const scale_transform = desired_scale / current_scale
+
+    const current_value = Number.parseFloat(container.style.getPropertyValue('--grid-cell-px').slice(0, -"px".length))
+
+    assert(Number.isSafeFloat(current_value), "grid cell px is valid float", current_value)
+
+    const new_value = current_value * scale_transform;
+    console.log({new_value, current_value, scale_transform})
+
+    container.style.setProperty("--grid-cell-px", new_value + 'px')
+
+    zoom_display_update(desired_scale)
+
+    container.style.setProperty(CONTAINER_PROP_SCALE, desired_scale)
+}
+
+/**
+ * @param {number} scale
+ */
+function zoom_display_update(scale) {
+    document.getElementById(ZOOM_DISPLAY_ID).innerText = (scale * 100).toFixed(0) + "%"
+}
+
+function zoom_controls_init() {
+    const ZOOM_ID__IN = "zoom-in"
+    const ZOOM_ID_OUT = "zoom-out"
+
+
+    const zoom_btn__in = document.getElementById(ZOOM_ID__IN)
+    const zoom_btn_out = document.getElementById(ZOOM_ID_OUT)
+
+    zoom_btn__in.addEventListener("click", function () {
+        grid_cell_px_adjust(+ZOOM_BTN_SCALE_FACTOR)
+    })
+    zoom_btn_out.addEventListener('click', function () {
+        grid_cell_px_adjust(-ZOOM_BTN_SCALE_FACTOR)
+    })
+}
+
+
 
 const seat_preview = document.createElement("div");
 seat_preview.id = "seat-preview";
@@ -623,7 +683,7 @@ function seat_student_transfer(dest_seat_ref, student_ref) {
     const original_seat_ref = student_get_seat(student_ref);
 
     if (original_seat_ref === dest_seat_ref) {
-        return
+        return;
     }
 
     if (original_seat_ref) {
@@ -634,9 +694,8 @@ function seat_student_transfer(dest_seat_ref, student_ref) {
         );
 
         if (student_in_seat_ref) {
-            const center = true;
             // move student in dest to the incoming students original seat
-            elem_animate_move(
+            elem_animate_move_swap(
                 student_in_seat_ref,
                 () => {
                     const also_student_in_seat_ref =
@@ -648,9 +707,8 @@ function seat_student_transfer(dest_seat_ref, student_ref) {
                     );
                     seat_student_set(original_seat_ref, student_in_seat_ref);
                 },
-                center,
+                student_ref,
             );
-            // seat_student_set(original_seat_ref, student_in_seat_ref);
         }
     } else if (student_in_seat_ref) {
         // move student in seat to sidebar if thats where incomming student
@@ -738,6 +796,9 @@ function seat_create(gridX, gridY) {
     element.ondragend = function (event) {
         preview_hide();
 
+        const seat = event.currentTarget;
+
+        elem_drag_offset_clear(seat);
         if (event.dataTransfer.dropEffect !== "none") {
             // drop succeeded
             return;
@@ -762,11 +823,9 @@ function seat_create(gridX, gridY) {
 
         e.preventDefault();
         // e.stopPropagation()
-
     };
 
     element.ondragenter = function (event) {
-
         if (!event.dataTransfer.types.includes("deskribe/student")) {
             return;
         }
@@ -787,7 +846,6 @@ function seat_create(gridX, gridY) {
             return;
         }
 
-
         seat_student_drop_indication_disable(event.currentTarget);
     };
 
@@ -805,10 +863,11 @@ function seat_create(gridX, gridY) {
             event.dataTransfer.getData("text/plain"),
         );
 
-        assert(Number.isSafeInteger(student_index),
-                "student index exists on student on drop",
-                event.dataTransfer,
-        )
+        assert(
+            Number.isSafeInteger(student_index),
+            "student index exists on student on drop",
+            event.dataTransfer,
+        );
 
         const student_ref = students[student_index];
         seat_student_transfer(seat_ref, student_ref);
@@ -894,7 +953,7 @@ function elem_animate_move_swap(element, move, swapping_with) {
 
     // FIXME: adjust final_rect_{x,y} by difference between
     // element and swapping_with elements bounding boxes
-    // to account for possible difference in size between the 
+    // to account for possible difference in size between the
     // two elements
     let final_rect_x = final_elem_rect.left;
     let final_rect_y = final_elem_rect.top;
@@ -1068,6 +1127,14 @@ function elem_drag_offset_get(elem) {
     return [offsetX, offsetY];
 }
 
+function elem_drag_offset_clear(elem) {
+    assert(elem != null, "elem not null")
+    assert('dataset' in elem, "elem is element with dataset property")
+
+    delete elem.dataset.offsetx
+    delete elem.dataset.offsety
+}
+
 function container_handle_drop_seat(event) {
     event.preventDefault();
     const idStr = event.dataTransfer.getData("text/plain");
@@ -1183,7 +1250,7 @@ function elem_make_invisible(elem) {
     store_and_clear_style("background-color", "transparent");
     store_and_clear_style("color", "transparent");
     store_and_clear_style("box-shadow", "0px 0px 0px rgba(0, 0, 0, 0)");
-    store_and_clear_style("border-color", "transparent")
+    store_and_clear_style("border-color", "transparent");
 }
 
 function elem_make_visible(elem) {
@@ -1204,7 +1271,7 @@ function elem_make_visible(elem) {
     restore_style("background-color");
     restore_style("color");
     restore_style("box-shadow");
-    restore_style("border-color")
+    restore_style("border-color");
 }
 
 const students = [];
@@ -1310,3 +1377,9 @@ const center_grid_y = Math.floor(gridH / 2);
 for (let i = 0; i < 10; i++) {
     container.appendChild(seat_create(center_grid_x, center_grid_y));
 }
+
+function init() {
+    zoom_controls_init()
+}
+
+init()
