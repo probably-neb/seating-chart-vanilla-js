@@ -1,10 +1,9 @@
 import "./style.css";
 
-
 // grid
 const gridW = 60;
 const gridH = 30;
-const gridCellPx = Math.floor((0.8 * window.innerWidth) / gridW);
+const gridCellPx_initial = Math.floor((0.8 * window.innerWidth) / gridW);
 
 const GRID_PROP_W = "--grid-w";
 const GRID_PROP_H = "--grid-h";
@@ -46,8 +45,8 @@ const DRAG_DATA_TYPE_KIND_STUDENT = "student";
 const STUDENT_DATA_SEAT_INDEX = "seatindex";
 
 // zoom
-const ZOOM_BTN_SCALE_FACTOR = 0.1
-const ZOOM_DISPLAY_ID = "zoom-display"
+const ZOOM_BTN_SCALE_FACTOR = 0.1;
+const ZOOM_DISPLAY_ID = "zoom-display";
 
 function assert(val, ...msg) {
     if (val) return;
@@ -56,9 +55,8 @@ function assert(val, ...msg) {
 }
 
 Number.isSafeFloat = function (val) {
-    return Number.isFinite(val) && !Number.isNaN(val)
-}
-
+    return Number.isFinite(val) && !Number.isNaN(val);
+};
 
 function grid_cell_px_dim(v) {
     return `calc(var(--grid-cell-px) * var(${v}))`;
@@ -74,7 +72,7 @@ app.appendChild(invisible_drag_preview);
 const container = document.getElementById("container");
 assert(container != null, "container not null");
 container.className = "relative bg-white";
-container.style.setProperty("--grid-cell-px", gridCellPx + "px");
+container.style.setProperty("--grid-cell-px", gridCellPx_initial + "px");
 container.style.setProperty(SEAT_PROP_GRID_W, SEAT_GRID_W);
 container.style.setProperty(SEAT_PROP_GRID_H, SEAT_GRID_H);
 container.style.setProperty(GRID_PROP_W, gridW);
@@ -93,55 +91,108 @@ container.style.backgroundImage = `
 
 container.style.backgroundSize = `var(--grid-cell-px) var(--grid-cell-px)`;
 
-const CONTAINER_PROP_SCALE = '--scale'
+const CONTAINER_PROP_SCALE = "--scale";
+
+function grid_cell_px_get() {
+    const gridCellPxStr = container.style.getPropertyValue("--grid-cell-px");
+    const gridCellPx = Number.parseFloat(gridCellPxStr.slice(0, -"px".length));
+
+    assert(
+        Number.isSafeFloat(
+            gridCellPx,
+            "gridCellPx is valid float",
+            gridCellPx,
+            gridCellPxStr,
+        ),
+    );
+
+    return gridCellPx;
+}
 
 function grid_cell_px_adjust(factor) {
-    const current_scale = Number.parseFloat(container.style.getPropertyValue(CONTAINER_PROP_SCALE) || "1")
+    const current_scale = Number.parseFloat(
+        container.style.getPropertyValue(CONTAINER_PROP_SCALE) || "1",
+    );
 
-    assert(Number.isSafeFloat(current_scale), "current_scale is safe float", current_scale);
+    assert(
+        Number.isSafeFloat(current_scale),
+        "current_scale is safe float",
+        current_scale,
+    );
 
-    const desired_scale = current_scale + factor
+    const desired_scale = current_scale + factor;
 
-    const scale_transform = desired_scale / current_scale
+    const scale_transform = desired_scale / current_scale;
 
-    const current_value = Number.parseFloat(container.style.getPropertyValue('--grid-cell-px').slice(0, -"px".length))
-
-    assert(Number.isSafeFloat(current_value), "grid cell px is valid float", current_value)
+    const current_value = grid_cell_px_get();
 
     const new_value = current_value * scale_transform;
-    console.log({new_value, current_value, scale_transform})
+    console.log({ new_value, current_value, scale_transform });
 
-    container.style.setProperty("--grid-cell-px", new_value + 'px')
+    container.style.setProperty("--grid-cell-px", new_value + "px");
 
-    zoom_display_update(desired_scale)
+    zoom_display_update(desired_scale);
 
-    container.style.setProperty(CONTAINER_PROP_SCALE, desired_scale)
+    container.style.setProperty(CONTAINER_PROP_SCALE, desired_scale);
+}
+
+function px_point_to_grid_round(gridCellPx, x, y) {
+    assert(
+        gridCellPx != null && x != null && y != null,
+        "signature is (gridCellPx, x, y) got: (",
+        [gridCellPx, x, y].join(", "),
+        ")",
+    );
+
+    const gridX = Math.round(x / gridCellPx);
+    const gridY = Math.round(y / gridCellPx);
+
+    return [gridX, gridY];
+}
+
+function px_point_to_grid_floor(gridCellPx, x, y) {
+    assert(
+        gridCellPx != null && x != null && y != null,
+        "signature is (gridCellPx, x, y) got: (",
+        [gridCellPx, x, y].join(", "),
+        ")",
+    );
+
+    const gridX = Math.floor(x / gridCellPx);
+    const gridY = Math.floor(y / gridCellPx);
+
+    return [gridX, gridY];
+}
+
+function px_point_to_grid_unsafe(gridCellPx, x, y) {
+    const gridX = x / gridCellPx;
+    const gridY = y / gridCellPx;
+
+    return [gridX, gridY];
 }
 
 /**
  * @param {number} scale
  */
 function zoom_display_update(scale) {
-    document.getElementById(ZOOM_DISPLAY_ID).innerText = (scale * 100).toFixed(0) + "%"
+    document.getElementById(ZOOM_DISPLAY_ID).innerText =
+        (scale * 100).toFixed(0) + "%";
 }
 
 function zoom_controls_init() {
-    const ZOOM_ID__IN = "zoom-in"
-    const ZOOM_ID_OUT = "zoom-out"
+    const ZOOM_ID__IN = "zoom-in";
+    const ZOOM_ID_OUT = "zoom-out";
 
-
-    const zoom_btn__in = document.getElementById(ZOOM_ID__IN)
-    const zoom_btn_out = document.getElementById(ZOOM_ID_OUT)
+    const zoom_btn__in = document.getElementById(ZOOM_ID__IN);
+    const zoom_btn_out = document.getElementById(ZOOM_ID_OUT);
 
     zoom_btn__in.addEventListener("click", function () {
-        grid_cell_px_adjust(+ZOOM_BTN_SCALE_FACTOR)
-    })
-    zoom_btn_out.addEventListener('click', function () {
-        grid_cell_px_adjust(-ZOOM_BTN_SCALE_FACTOR)
-    })
+        grid_cell_px_adjust(+ZOOM_BTN_SCALE_FACTOR);
+    });
+    zoom_btn_out.addEventListener("click", function () {
+        grid_cell_px_adjust(-ZOOM_BTN_SCALE_FACTOR);
+    });
 }
-
-
 
 const seat_preview = document.createElement("div");
 seat_preview.id = "seat-preview";
@@ -189,14 +240,16 @@ selection.ondrag = function (event) {
     const [offsetX, offsetY] = elem_drag_offset_get(event.target);
     const gridX = clamp(
         Math.round(
-            (event.clientX - containerDomRect.left - offsetX) / gridCellPx,
+            (event.clientX - containerDomRect.left - offsetX) /
+                gridCellPx_initial,
         ),
         0,
         gridW,
     );
     const gridY = clamp(
         Math.round(
-            (event.clientY - containerDomRect.top - offsetY) / gridCellPx,
+            (event.clientY - containerDomRect.top - offsetY) /
+                gridCellPx_initial,
         ),
         0,
         gridH,
@@ -272,11 +325,12 @@ function selection_update() {
         end: { gridX: endX, gridY: endY },
     } = selected_region;
 
-    selection.style.transform = `translate(${startX * gridCellPx}px, ${
-        startY * gridCellPx
+    selection.style.transform = `translate(${startX * gridCellPx_initial}px, ${
+        startY * gridCellPx_initial
     }px)`;
-    selection.style.width = Math.abs(endX - startX) * gridCellPx + "px";
-    selection.style.height = Math.abs(endY - startY) * gridCellPx + "px";
+    selection.style.width = Math.abs(endX - startX) * gridCellPx_initial + "px";
+    selection.style.height =
+        Math.abs(endY - startY) * gridCellPx_initial + "px";
 }
 
 function selected_seat_refs_get() {
@@ -331,10 +385,10 @@ container.onmousedown = function (event) {
     }
 
     const gridX = Math.floor(
-        (event.clientX - containerDomRect.left) / gridCellPx,
+        (event.clientX - containerDomRect.left) / gridCellPx_initial,
     );
     const gridY = Math.floor(
-        (event.clientY - containerDomRect.top) / gridCellPx,
+        (event.clientY - containerDomRect.top) / gridCellPx_initial,
     );
     selected_region = {
         start: { gridX, gridY },
@@ -354,10 +408,10 @@ container.onmousemove = function (event) {
     console.log("mouse move");
 
     const gridX = Math.round(
-        (event.clientX - containerDomRect.left) / gridCellPx,
+        (event.clientX - containerDomRect.left) / gridCellPx_initial,
     );
     const gridY = Math.round(
-        (event.clientY - containerDomRect.top) / gridCellPx,
+        (event.clientY - containerDomRect.top) / gridCellPx_initial,
     );
     console.log(`end = [${gridX}, ${gridY}]`);
     selected_region_end_set(gridX, gridY);
@@ -373,10 +427,10 @@ container.onmouseup = function (event) {
     console.log("mouse up");
 
     const gridX = Math.round(
-        (event.clientX - containerDomRect.left) / gridCellPx,
+        (event.clientX - containerDomRect.left) / gridCellPx_initial,
     );
     const gridY = Math.round(
-        (event.clientY - containerDomRect.top) / gridCellPx,
+        (event.clientY - containerDomRect.top) / gridCellPx_initial,
     );
     selected_region_end_set(gridX, gridY);
 
@@ -469,8 +523,58 @@ function selected_seats_update(selected_seats) {
     }
 }
 
-function closest_non_overlapping_pos(dragging_index, gridX, gridY) {
-    // console.time("closest_non_overlapping_pos");
+function* dbg_generate_rainbow_colors(max_colors = 360) {
+    const hueStep = 360 / max_colors;
+
+    for (let i = 0; i < max_colors; i++) {
+        const hue = i * hueStep;
+        yield `hsl(${hue}, 100%, 50%)`;
+    }
+
+    return null;
+}
+
+function dbg_render_dot_in_grid_square(color, gridX, gridY) {
+    const dbg_dot = document.createElement("div");
+    dbg_dot.style.backgroundColor = color;
+    const gridCellPx = grid_cell_px_get();
+
+    dbg_dot.style.position = "absolute"
+    dbg_dot.style.top = 0
+    dbg_dot.style.left = 0
+
+    const size = Math.round(0.8 * gridCellPx)
+
+    const x = gridCellPx * gridX + gridCellPx / 2 - size / 2;
+    const y = gridCellPx * gridY + gridCellPx / 2 - size / 2;
+
+    dbg_dot.style.transform = `translate(${x}px, ${y}px)`;
+    dbg_dot.style.width = size + "px";
+    dbg_dot.style.height = size + "px";
+    dbg_dot.classList = "rounded-full";
+
+    dbg_dot.dataset["dbgdot"] = "";
+    container.appendChild(dbg_dot);
+}
+
+function dbg_clear_all_dots() {
+    const dots = document.querySelectorAll('[data-dbgdot]')
+    for (const dot of dots) {
+        dot.remove()
+    }
+}
+
+function dbg_sleep(milliseconds) {
+    console.warn("sleep", milliseconds);
+    const start = Date.now();
+    while (Date.now() - start < milliseconds) {
+        // Do nothing, just wait
+    }
+}
+
+function closest_non_overlapping_pos(dragging_index, absX, absY) {
+    // console.time("closest non overlapping pos circ");
+
     function isValidPosition(gridX, gridY) {
         let is_not_overlapping = true;
         if (gridX < 0 || gridX > gridW - SEAT_GRID_W) return false;
@@ -490,40 +594,49 @@ function closest_non_overlapping_pos(dragging_index, gridX, gridY) {
         return is_not_overlapping;
     }
 
+    const gridCellPx = grid_cell_px_get();
+
+    const [gridX, gridY] = px_point_to_grid_round(gridCellPx, absX, absY);
+
     if (isValidPosition(gridX, gridY)) {
-        // console.timeEnd("closest_non_overlapping_pos");
+        // console.timeEnd("closest non overlapping pos circ");
         return { gridX, gridY };
     }
 
-    // NOTE: In order to make snap feel less erratic
-    // could track moment vector of dragging seat
-    // and sort directions by min angle between the dir and moment vectors
-    // OR just walk along moment vector
+    const [absGridX, absGridY] = px_point_to_grid_unsafe(
+        gridCellPx,
+        absX,
+        absY,
+    );
+    const [centerX, centerY] = seat_center_exact(absGridX, absGridY);
 
-    const directions = [
-        [1, 0],
-        [-1, 0],
-        [0, 1],
-        [0, -1],
-        [1, 1],
-        [1, -1],
-        [-1, 1],
-        [-1, -1],
-    ];
+    const max_radius = Math.min(gridW, gridH)
 
-    let distance = 1;
-    while (distance < Math.max(gridW, gridH)) {
-        for (const [dx, dy] of directions) {
-            const newX = gridX + dx * distance;
-            const newY = gridY + dy * distance;
-            if (isValidPosition(newX, newY)) {
-                // console.timeEnd("closest_non_overlapping_pos");
-                return { gridX: newX, gridY: newY };
+    for (let radius = 1; radius <= max_radius; radius++) {
+        for (let angle = 0; angle < 360; angle++) {
+            const x = Math.round(centerX + radius * Math.cos(angle * Math.PI / 180) - SEAT_GRID_W / 2);
+            const y = Math.round(centerY + radius * Math.sin(angle * Math.PI / 180) - SEAT_GRID_H / 2);
+
+            if (isValidPosition(x, y)) {
+                // console.timeEnd("closest non overlapping pos circ");
+                // console.log('angle', angle, 'radius', radius)
+                return { gridX: x, gridY: y };
             }
         }
-        distance++;
     }
     throw new Error("No valid position found");
+}
+
+
+/**
+ * @returns {[centerX: number, centerY: number]} [centerX, centerY]
+ */
+function seat_center_exact(gridX, gridY) {
+    return [gridX + SEAT_GRID_W / 2, gridY + SEAT_GRID_H / 2];
+}
+
+function calculate_distance(x1, y1, x2, y2) {
+    return Math.sqrt(Math.pow(x1 - x2, 2) + Math.pow(y1 - y2, 2));
 }
 
 /**
@@ -734,14 +847,17 @@ function seat_create(gridX, gridY) {
     element.style.height = grid_cell_px_dim(SEAT_PROP_GRID_H);
     element.dataset[SEAT_DATA_IDENTIFIER] = "";
     seat_refs.push(element);
+
+    const gridCellPx = grid_cell_px_get();
     const { gridX: snapX, gridY: snapY } = closest_non_overlapping_pos(
         id,
-        gridX,
-        gridY,
+        gridX * gridCellPx,
+        gridY * gridCellPx,
     );
     seat_loc_set(element, snapX, snapY);
 
     element.ondragstart = function (event) {
+        dbg_clear_all_dots()
         console.log("DRAG SEAT START", element.dataset);
         if ("selected" in element.dataset) {
             console.log("dragging selected seat");
@@ -778,10 +894,7 @@ function seat_create(gridX, gridY) {
 
         element.style.transform = `translate(${x}px, ${y}px)`;
 
-        const gridX = Math.round(x / gridCellPx);
-        const gridY = Math.round(y / gridCellPx);
-        const snapped_loc = closest_non_overlapping_pos(id, gridX, gridY);
-
+        const snapped_loc = closest_non_overlapping_pos(id, x, y);
         {
             assert(seat_preview != null, "preview not null");
             seat_transform_set(
@@ -1067,9 +1180,11 @@ function elem_animate_move(element, move, center = false) {
     // Force a repaint
     element.offsetWidth;
 
-    const distance = Math.sqrt(
-        Math.pow(final_rect_x - initialRect.left, 2) +
-            Math.pow(final_rect_y - initialRect.top, 2),
+    const distance = calculate_distance(
+        final_rect_x,
+        final_rect_y,
+        initialRect.left,
+        initialRect.top,
     );
 
     const duration = distance / 300;
@@ -1128,11 +1243,11 @@ function elem_drag_offset_get(elem) {
 }
 
 function elem_drag_offset_clear(elem) {
-    assert(elem != null, "elem not null")
-    assert('dataset' in elem, "elem is element with dataset property")
+    assert(elem != null, "elem not null");
+    assert("dataset" in elem, "elem is element with dataset property");
 
-    delete elem.dataset.offsetx
-    delete elem.dataset.offsety
+    delete elem.dataset.offsetx;
+    delete elem.dataset.offsety;
 }
 
 function container_handle_drop_seat(event) {
@@ -1168,14 +1283,16 @@ function container_handle_drop_selection(event) {
 
     const gridX = clamp(
         Math.round(
-            (event.clientX - containerDomRect.left - offsetX) / gridCellPx,
+            (event.clientX - containerDomRect.left - offsetX) /
+                gridCellPx_initial,
         ),
         0,
         gridW,
     );
     const gridY = clamp(
         Math.round(
-            (event.clientY - containerDomRect.top - offsetY) / gridCellPx,
+            (event.clientY - containerDomRect.top - offsetY) /
+                gridCellPx_initial,
         ),
         0,
         gridH,
@@ -1374,12 +1491,14 @@ containerDomRect = container.getBoundingClientRect();
 
 const center_grid_x = Math.floor(gridW / 2);
 const center_grid_y = Math.floor(gridH / 2);
+
 for (let i = 0; i < 10; i++) {
     container.appendChild(seat_create(center_grid_x, center_grid_y));
 }
+dbg_clear_all_dots()
 
 function init() {
-    zoom_controls_init()
+    zoom_controls_init();
 }
 
-init()
+init();
