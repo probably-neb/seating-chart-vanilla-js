@@ -60,7 +60,7 @@ Number.isSafeFloat = function (val) {
 };
 
 function grid_cell_px_dim(v) {
-    assert(v.startsWith('--'), 'grid cell px dim must reference a variable')
+    assert(v.startsWith("--"), "grid cell px dim must reference a variable");
     return `calc(var(--grid-cell-px) * var(${v}))`;
 }
 
@@ -71,6 +71,7 @@ const invisible_drag_preview = document.createElement("span");
 invisible_drag_preview.style.display = "none";
 app.appendChild(invisible_drag_preview);
 
+/** @type {HTMLDivElement} */
 const container = document.getElementById("container");
 assert(container != null, "container not null");
 container.className = "relative bg-white";
@@ -129,7 +130,7 @@ function grid_cell_px_adjust(factor) {
     const current_value = grid_cell_px_get();
 
     const new_value = current_value * scale_transform;
-    console.log({ new_value, current_value, scale_transform });
+    // console.log({ new_value, current_value, scale_transform });
 
     container.style.setProperty("--grid-cell-px", new_value + "px");
 
@@ -181,21 +182,6 @@ function zoom_display_update(scale) {
         (scale * 100).toFixed(0) + "%";
 }
 
-function zoom_controls_init() {
-    const ZOOM_ID__IN = "zoom-in";
-    const ZOOM_ID_OUT = "zoom-out";
-
-    const zoom_btn__in = document.getElementById(ZOOM_ID__IN);
-    const zoom_btn_out = document.getElementById(ZOOM_ID_OUT);
-
-    zoom_btn__in.addEventListener("click", function () {
-        grid_cell_px_adjust(+ZOOM_BTN_SCALE_FACTOR);
-    });
-    zoom_btn_out.addEventListener("click", function () {
-        grid_cell_px_adjust(-ZOOM_BTN_SCALE_FACTOR);
-    });
-}
-
 const seat_preview = document.createElement("div");
 seat_preview.id = "seat-preview";
 seat_preview.className = "absolute bg-blue-300 border-2 border-indigo-500";
@@ -236,18 +222,20 @@ selection.ondragstart = function (event) {
 };
 
 selection.ondrag = function (event) {
-    containerDomRect = container.getBoundingClientRect()
+    containerDomRect = container.getBoundingClientRect();
     assert(containerDomRect != null, "containerDomRect not null");
     assert(selected_region != null, "selected_region not null");
 
     const [offsetX, offsetY] = elem_drag_offset_get(event.target);
 
-
-    const gridCellPx = grid_cell_px_get()
+    const gridCellPx = grid_cell_px_get();
 
     const gridX = clamp(
         Math.round(
-            (event.clientX - containerDomRect.left - offsetX + container.scrollLeft) /
+            (event.clientX -
+                containerDomRect.left -
+                offsetX +
+                container.scrollLeft) /
                 gridCellPx,
         ),
         0,
@@ -255,7 +243,10 @@ selection.ondrag = function (event) {
     );
     const gridY = clamp(
         Math.round(
-            (event.clientY - containerDomRect.top - offsetY + container.scrollTop) /
+            (event.clientY -
+                containerDomRect.top -
+                offsetY +
+                container.scrollTop) /
                 gridCellPx,
         ),
         0,
@@ -332,20 +323,20 @@ function selection_update() {
         end: { gridX: endX, gridY: endY },
     } = selected_region;
 
-    elem_grid_pos_set(selection, startX, startY)
+    elem_grid_pos_set(selection, startX, startY);
 
-    const PROP_WIDTH = "--width"
-    const PROP_HEIGHT = "--height"
-    selection.style.setProperty(PROP_WIDTH, Math.abs(endX - startX))
-    selection.style.setProperty(PROP_HEIGHT, Math.abs(endY - startY))
+    const PROP_WIDTH = "--width";
+    const PROP_HEIGHT = "--height";
+    selection.style.setProperty(PROP_WIDTH, Math.abs(endX - startX));
+    selection.style.setProperty(PROP_HEIGHT, Math.abs(endY - startY));
 
-    selection.style.width = grid_cell_px_dim(PROP_WIDTH)
-    selection.style.height = grid_cell_px_dim(PROP_HEIGHT)
+    selection.style.width = grid_cell_px_dim(PROP_WIDTH);
+    selection.style.height = grid_cell_px_dim(PROP_HEIGHT);
 
     console.log({
         width: selection.style.width,
         height: selection.style.height,
-    })
+    });
 }
 
 function selected_seat_refs_get() {
@@ -386,7 +377,10 @@ function selection_clear() {
 }
 
 container.onmousedown = function (event) {
-    containerDomRect = container.getBoundingClientRect()
+    if (event.ctrlKey) {
+        return;
+    }
+    containerDomRect = container.getBoundingClientRect();
     console.log("mouse down", event.composedPath());
     {
         // ensure not clicking something besides container
@@ -400,13 +394,15 @@ container.onmousedown = function (event) {
         selection_clear();
     }
 
-    const gridCellPx = grid_cell_px_get()
+    const gridCellPx = grid_cell_px_get();
 
     const gridX = Math.floor(
-        (event.clientX - containerDomRect.left + container.scrollLeft) / gridCellPx,
+        (event.clientX - containerDomRect.left + container.scrollLeft) /
+            gridCellPx,
     );
     const gridY = Math.floor(
-        (event.clientY - containerDomRect.top + container.scrollTop) / gridCellPx,
+        (event.clientY - containerDomRect.top + container.scrollTop) /
+            gridCellPx,
     );
     selected_region = {
         start: { gridX, gridY },
@@ -423,16 +419,18 @@ container.onmousemove = function (event) {
         // selection_clear();
         return;
     }
-    containerDomRect = container.getBoundingClientRect()
+    containerDomRect = container.getBoundingClientRect();
     console.log("mouse move");
 
-    const gridCellPx = grid_cell_px_get()
+    const gridCellPx = grid_cell_px_get();
 
     const gridX = Math.floor(
-        (event.clientX - containerDomRect.left + container.scrollLeft) / gridCellPx,
+        (event.clientX - containerDomRect.left + container.scrollLeft) /
+            gridCellPx,
     );
     const gridY = Math.floor(
-        (event.clientY - containerDomRect.top + container.scrollTop) / gridCellPx,
+        (event.clientY - containerDomRect.top + container.scrollTop) /
+            gridCellPx,
     );
     console.log(`end = [${gridX}, ${gridY}]`);
     selected_region_end_set(gridX, gridY);
@@ -448,13 +446,15 @@ container.onmouseup = function (event) {
     }
     console.log("mouse up");
 
-    const gridCellPx = grid_cell_px_get()
+    const gridCellPx = grid_cell_px_get();
 
     const gridX = Math.floor(
-        (event.clientX - containerDomRect.left + container.scrollLeft) / gridCellPx,
+        (event.clientX - containerDomRect.left + container.scrollLeft) /
+            gridCellPx,
     );
     const gridY = Math.floor(
-        (event.clientY - containerDomRect.top + container.scrollTop) / gridCellPx,
+        (event.clientY - containerDomRect.top + container.scrollTop) /
+            gridCellPx,
     );
     selected_region_end_set(gridX, gridY);
 
@@ -563,11 +563,11 @@ function dbg_render_dot_in_grid_square(color, gridX, gridY) {
     dbg_dot.style.backgroundColor = color;
     const gridCellPx = grid_cell_px_get();
 
-    dbg_dot.style.position = "absolute"
-    dbg_dot.style.top = 0
-    dbg_dot.style.left = 0
+    dbg_dot.style.position = "absolute";
+    dbg_dot.style.top = 0;
+    dbg_dot.style.left = 0;
 
-    const size = Math.round(0.8 * gridCellPx)
+    const size = Math.round(0.8 * gridCellPx);
 
     const x = gridCellPx * gridX + gridCellPx / 2 - size / 2;
     const y = gridCellPx * gridY + gridCellPx / 2 - size / 2;
@@ -582,9 +582,9 @@ function dbg_render_dot_in_grid_square(color, gridX, gridY) {
 }
 
 function dbg_clear_all_dots() {
-    const dots = document.querySelectorAll('[data-dbgdot]')
+    const dots = document.querySelectorAll("[data-dbgdot]");
     for (const dot of dots) {
-        dot.remove()
+        dot.remove();
     }
 }
 
@@ -634,12 +634,20 @@ function closest_non_overlapping_pos(dragging_index, absX, absY) {
     );
     const [centerX, centerY] = seat_center_exact(absGridX, absGridY);
 
-    const max_radius = Math.min(gridW, gridH)
+    const max_radius = Math.min(gridW, gridH);
 
     for (let radius = 1; radius <= max_radius; radius++) {
         for (let angle = 0; angle < 360; angle++) {
-            const x = Math.round(centerX + radius * Math.cos(angle * Math.PI / 180) - SEAT_GRID_W / 2);
-            const y = Math.round(centerY + radius * Math.sin(angle * Math.PI / 180) - SEAT_GRID_H / 2);
+            const x = Math.round(
+                centerX +
+                    radius * Math.cos((angle * Math.PI) / 180) -
+                    SEAT_GRID_W / 2,
+            );
+            const y = Math.round(
+                centerY +
+                    radius * Math.sin((angle * Math.PI) / 180) -
+                    SEAT_GRID_H / 2,
+            );
 
             if (isValidPosition(x, y)) {
                 // console.timeEnd("closest non overlapping pos circ");
@@ -650,7 +658,6 @@ function closest_non_overlapping_pos(dragging_index, absX, absY) {
     }
     throw new Error("No valid position found");
 }
-
 
 /**
  * @returns {[centerX: number, centerY: number]} [centerX, centerY]
@@ -680,12 +687,8 @@ function elem_grid_pos_set(seat_ref, gridX, gridY) {
  * relative to the start of the selection
  */
 function elem_grid_pos_get(seat_ref) {
-    const x = Number.parseInt(
-        seat_ref.style.getPropertyValue(PROP_GRID_POS_X),
-    );
-    const y = Number.parseInt(
-        seat_ref.style.getPropertyValue(PROP_GRID_POS_Y),
-    );
+    const x = Number.parseInt(seat_ref.style.getPropertyValue(PROP_GRID_POS_X));
+    const y = Number.parseInt(seat_ref.style.getPropertyValue(PROP_GRID_POS_Y));
 
     assert(Number.isSafeInteger(x), "x is int", x);
     assert(Number.isSafeInteger(y), "y is int", y);
@@ -881,7 +884,7 @@ function seat_create(gridX, gridY) {
     seat_loc_set(element, snapX, snapY);
 
     element.ondragstart = function (event) {
-        dbg_clear_all_dots()
+        dbg_clear_all_dots();
         console.log("DRAG SEAT START", element.dataset);
         if ("selected" in element.dataset) {
             console.log("dragging selected seat");
@@ -914,8 +917,16 @@ function seat_create(gridX, gridY) {
 
         const [offsetX, offsetY] = elem_drag_offset_get(event.target);
 
-        const x = event.clientX - containerDomRect.left - offsetX + container.scrollLeft;
-        const y = event.clientY - containerDomRect.top - offsetY + container.scrollTop;
+        const x =
+            event.clientX -
+            containerDomRect.left -
+            offsetX +
+            container.scrollLeft;
+        const y =
+            event.clientY -
+            containerDomRect.top -
+            offsetY +
+            container.scrollTop;
 
         element.style.transform = `translate(${x}px, ${y}px)`;
 
@@ -1310,7 +1321,10 @@ function container_handle_drop_selection(event) {
 
     const gridX = clamp(
         Math.round(
-            (event.clientX - containerDomRect.left - offsetX + container.scrollLeft) /
+            (event.clientX -
+                containerDomRect.left -
+                offsetX +
+                container.scrollLeft) /
                 gridCellPx,
         ),
         0,
@@ -1318,7 +1332,10 @@ function container_handle_drop_selection(event) {
     );
     const gridY = clamp(
         Math.round(
-            (event.clientY - containerDomRect.top - offsetY + container.scrollTop) /
+            (event.clientY -
+                containerDomRect.top -
+                offsetY +
+                container.scrollTop) /
                 gridCellPx,
         ),
         0,
@@ -1517,16 +1534,70 @@ sidebar_student_add.onclick = () => {
 
 containerDomRect = container.getBoundingClientRect();
 
-const center_grid_x = Math.floor(gridW / 2);
-const center_grid_y = Math.floor(gridH / 2);
-
-for (let i = 0; i < 10; i++) {
-    container.appendChild(seat_create(center_grid_x, center_grid_y));
-}
-dbg_clear_all_dots()
-
 function init() {
-    zoom_controls_init();
+    // zoom
+    {
+        const ZOOM_ID__IN = "zoom-in";
+        const ZOOM_ID_OUT = "zoom-out";
+
+        const zoom_btn__in = document.getElementById(ZOOM_ID__IN);
+        const zoom_btn_out = document.getElementById(ZOOM_ID_OUT);
+
+        zoom_btn__in.addEventListener("click", function () {
+            grid_cell_px_adjust(+ZOOM_BTN_SCALE_FACTOR);
+        });
+        zoom_btn_out.addEventListener("click", function () {
+            grid_cell_px_adjust(-ZOOM_BTN_SCALE_FACTOR);
+        });
+
+        // add to parent so that zoom still works if event triggers outside canvas
+        // bounds and zoom is not interupted if zoom causes canvas to no longer be
+        // under mouse (i.e. canvas shrinks)
+        container.parentElement.addEventListener("wheel", function (event) {
+            if (!event.ctrlKey) {
+                return;
+            }
+
+            grid_cell_px_adjust(-event.deltaY / 250);
+            // TODO: center zoom on mouse position
+
+            // event.preventDefault();
+        });
+    }
+
+    // seat controls
+    {
+        document
+            .getElementById("add-seat-button")
+            .addEventListener("click", () => {
+                console.log("creating new seat");
+                container.appendChild(seat_create(0, 0));
+            });
+
+        container.addEventListener("click", function (event) {
+            if (!event.ctrlKey || is_creating_selection) {
+                return;
+            }
+            event.preventDefault();
+
+            containerDomRect = container.getBoundingClientRect();
+
+            const px_x =
+                event.clientX - containerDomRect.left + container.scrollLeft;
+            const px_y =
+                event.clientY - containerDomRect.top + container.scrollTop;
+            const [center_gridX, center_gridY] = px_point_to_grid_round(
+                grid_cell_px_get(),
+                px_x,
+                px_y,
+            );
+
+            const gridX = Math.round(center_gridX - SEAT_GRID_W / 2);
+            const gridY = Math.round(center_gridY - SEAT_GRID_H / 2);
+
+            container.appendChild(seat_create(gridX, gridY));
+        });
+    }
 }
 
 init();
