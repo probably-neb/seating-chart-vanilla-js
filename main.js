@@ -1,4 +1,10 @@
+// vim: foldmethod=marker
+
 import "./style.css";
+
+const app = document.getElementById("app");
+assert(app != null, "app not null");
+
 
 // grid
 const gridW = 60;
@@ -8,6 +14,12 @@ const gridCellPx_initial = Math.floor((0.8 * window.innerWidth) / gridW);
 const GRID_PROP_W = "--grid-w";
 const GRID_PROP_H = "--grid-h";
 
+const PROP_GRID_POS_X = "--grid-x";
+const PROP_GRID_POS_Y = "--grid-y";
+
+const GRID_POS_TRANSFORM =
+    "translate(calc(var(--grid-cell-px) * var(--grid-x)), calc(var(--grid-cell-px) * var(--grid-y)))";
+
 // seats
 const SEAT_GRID_W = 4;
 const SEAT_GRID_H = 4;
@@ -15,23 +27,28 @@ const SEAT_GRID_H = 4;
 const SEAT_PROP_GRID_W = "--seat-grid-w";
 const SEAT_PROP_GRID_H = "--seat-grid-h";
 
-const PROP_GRID_POS_X = "--grid-x";
-const PROP_GRID_POS_Y = "--grid-y";
-
-const GRID_POS_TRANSFORM =
-    "translate(calc(var(--grid-cell-px) * var(--grid-x)), calc(var(--grid-cell-px) * var(--grid-y)))";
-
 const SEAT_DATA_IDENTIFIER = "seat";
 const SEAT_ID_PREFIX = "drag-";
 
+const SEAT_DATA_STUDENT_DROP_INDICATION = "studentdragover";
+
 let next_seat_id = 0;
 let seat_refs = [];
+// FIXME: remove - calculate on demand using `seat_abs_loc_get`
 let seat_locs = [];
 
+const seat_preview_ref = document.createElement("div");
+
 // container
+const CONTAINER_PROP_SCALE = "--scale";
+
+/** @type {HTMLDivElement} */
+const container_ref = document.getElementById("container");
+assert(container_ref != null, "container not null");
 let containerDomRect;
 
 // selection
+const selection = document.createElement("div");
 let is_creating_selection = false;
 let selected_region;
 
@@ -42,12 +59,34 @@ const DRAG_DATA_TYPE_KIND_SEAT = "seat";
 const DRAG_DATA_TYPE_KIND_SELECTION = "selection";
 const DRAG_DATA_TYPE_KIND_STUDENT = "student";
 
+const invisible_drag_preview = document.createElement("span");
+{
+    invisible_drag_preview.style.display = "none";
+    app.appendChild(invisible_drag_preview);
+}
+
+
 // student
 const STUDENT_DATA_SEAT_INDEX = "seatindex";
+const student_refs = [];
 
 // zoom
 const ZOOM_BTN_SCALE_FACTOR = 0.1;
 const ZOOM_DISPLAY_ID = "zoom-display";
+
+// sidebar
+const sidebar_ref = document.getElementById("sidebar");
+assert(sidebar_ref != null, "sidebar not null");
+const sidebar_student_list_ref = sidebar_ref.querySelector("#students");
+
+const STUDENT_CLASSLIST_SIDEBAR =
+    "ring-2 rounded-md w-40 h-8 flex items-center justify-center font-semibold text-xs bg-white text-black";
+
+const STUDENT_CLASSLIST_SEATING =
+    "border-2 border-black rounded-md w-min px-2 py-1 flex items-center justify-center font-semibold text-xs bg-white text-black break-normal";
+
+
+
 
 function assert(val, ...msg) {
     if (val) return;
@@ -64,40 +103,8 @@ function grid_cell_px_dim(v) {
     return `calc(var(--grid-cell-px) * var(${v}))`;
 }
 
-const app = document.getElementById("app");
-assert(app != null, "app not null");
-
-const invisible_drag_preview = document.createElement("span");
-invisible_drag_preview.style.display = "none";
-app.appendChild(invisible_drag_preview);
-
-/** @type {HTMLDivElement} */
-const container = document.getElementById("container");
-assert(container != null, "container not null");
-container.className = "relative bg-white";
-container.style.setProperty("--grid-cell-px", gridCellPx_initial + "px");
-container.style.setProperty(SEAT_PROP_GRID_W, SEAT_GRID_W);
-container.style.setProperty(SEAT_PROP_GRID_H, SEAT_GRID_H);
-container.style.setProperty(GRID_PROP_W, gridW);
-container.style.setProperty(GRID_PROP_H, gridH);
-container.style.width = grid_cell_px_dim(GRID_PROP_W);
-container.style.height = grid_cell_px_dim(GRID_PROP_H);
-
-container.ondragover = function (event) {
-    event.preventDefault();
-};
-
-container.style.backgroundImage = `
-    linear-gradient(to right, #e5e5e5 1px, transparent 1px),
-    linear-gradient(to bottom, #e5e5e5 1px, transparent 1px)
-`;
-
-container.style.backgroundSize = `var(--grid-cell-px) var(--grid-cell-px)`;
-
-const CONTAINER_PROP_SCALE = "--scale";
-
 function grid_cell_px_get() {
-    const gridCellPxStr = container.style.getPropertyValue("--grid-cell-px");
+    const gridCellPxStr = container_ref.style.getPropertyValue("--grid-cell-px");
     const gridCellPx = Number.parseFloat(gridCellPxStr.slice(0, -"px".length));
 
     assert(
@@ -114,7 +121,7 @@ function grid_cell_px_get() {
 
 function grid_cell_px_adjust(factor) {
     const current_scale = Number.parseFloat(
-        container.style.getPropertyValue(CONTAINER_PROP_SCALE) || "1",
+        container_ref.style.getPropertyValue(CONTAINER_PROP_SCALE) || "1",
     );
 
     assert(
@@ -132,11 +139,11 @@ function grid_cell_px_adjust(factor) {
     const new_value = current_value * scale_transform;
     // console.log({ new_value, current_value, scale_transform });
 
-    container.style.setProperty("--grid-cell-px", new_value + "px");
+    container_ref.style.setProperty("--grid-cell-px", new_value + "px");
 
     zoom_display_update(desired_scale);
 
-    container.style.setProperty(CONTAINER_PROP_SCALE, desired_scale);
+    container_ref.style.setProperty(CONTAINER_PROP_SCALE, desired_scale);
 }
 
 function px_point_to_grid_round(gridCellPx, x, y) {
@@ -182,103 +189,14 @@ function zoom_display_update(scale) {
         (scale * 100).toFixed(0) + "%";
 }
 
-const seat_preview = document.createElement("div");
-seat_preview.id = "seat-preview";
-seat_preview.className = "absolute bg-blue-300 border-2 border-indigo-500";
-seat_preview.style.display = "none";
-seat_preview.style.width = grid_cell_px_dim(SEAT_PROP_GRID_W);
-seat_preview.style.height = grid_cell_px_dim(SEAT_PROP_GRID_H);
-container.appendChild(seat_preview);
-
 function preview_show(gridX, gridY) {
-    elem_grid_pos_set(seat_preview, gridX, gridY);
-    seat_preview.style.display = "block";
+    elem_grid_pos_set(seat_preview_ref, gridX, gridY);
+    seat_preview_ref.style.display = "block";
 }
 
 function preview_hide() {
-    seat_preview.style.display = "none";
+    seat_preview_ref.style.display = "none";
 }
-
-const selection = document.createElement("div");
-selection.id = "selection";
-selection.className = "absolute bg-blue-300/40 ring-2 ring-blue-500 z-5";
-selection.style.display = "none";
-selection.draggable = true;
-container.appendChild(selection);
-
-selection.ondragstart = function (event) {
-    console.log("selection ondragstart");
-    if (is_creating_selection || selected_region == null) {
-        console.log("selection not ondragstart");
-        event.preventDefault();
-        return;
-    }
-    event.dataTransfer.setData(
-        DRAG_DATA_TYPE_KIND,
-        DRAG_DATA_TYPE_KIND_SELECTION,
-    );
-    event.dataTransfer.setDragImage(invisible_drag_preview, 0, 0);
-    elem_drag_offset_set(event.target, event.clientX, event.clientY);
-};
-
-selection.ondrag = function (event) {
-    containerDomRect = container.getBoundingClientRect();
-    assert(containerDomRect != null, "containerDomRect not null");
-    assert(selected_region != null, "selected_region not null");
-
-    const [offsetX, offsetY] = elem_drag_offset_get(event.target);
-
-    const gridCellPx = grid_cell_px_get();
-
-    const gridX = clamp(
-        Math.round(
-            (event.clientX -
-                containerDomRect.left -
-                offsetX +
-                container.scrollLeft) /
-                gridCellPx,
-        ),
-        0,
-        gridW,
-    );
-    const gridY = clamp(
-        Math.round(
-            (event.clientY -
-                containerDomRect.top -
-                offsetY +
-                container.scrollTop) /
-                gridCellPx,
-        ),
-        0,
-        gridH,
-    );
-
-    const {
-        start: { gridX: startX, gridY: startY },
-        end: { gridX: endX, gridY: endY },
-    } = selected_region;
-
-    const width = endX - startX;
-    const height = endY - startY;
-
-    selected_region.start.gridX = gridX;
-    selected_region.start.gridY = gridY;
-    selected_region.end.gridX = gridX + width;
-    selected_region.end.gridY = gridY + height;
-
-    selection_update();
-};
-
-selection.ondragend = function (event) {
-    if (selected_region == null) {
-        console.warn("no selection on ondragend");
-    }
-
-    if (event.dataTransfer.dropEffect !== "none") {
-        // drop succeeded
-        return;
-    }
-};
 
 function selection_region_is_normalized() {
     if (selected_region == null) {
@@ -366,7 +284,7 @@ function selection_clear() {
     }
     for (const seat of selected_seats) {
         seat.remove();
-        container.appendChild(seat);
+        container_ref.appendChild(seat);
         delete seat.dataset.selected;
         seat_grid_pos_revert_to_abs_loc(seat);
         seat.draggable = true;
@@ -375,101 +293,6 @@ function selection_clear() {
     selected_region = null;
     is_creating_selection = false;
 }
-
-container.onmousedown = function (event) {
-    if (event.ctrlKey) {
-        return;
-    }
-    containerDomRect = container.getBoundingClientRect();
-    console.log("mouse down", event.composedPath());
-    {
-        // ensure not clicking something besides container
-        const path = event.composedPath();
-        if (path.at(0)?.id !== container.id) {
-            return;
-        }
-    }
-
-    if (selected_region != null) {
-        selection_clear();
-    }
-
-    const gridCellPx = grid_cell_px_get();
-
-    const gridX = Math.floor(
-        (event.clientX - containerDomRect.left + container.scrollLeft) /
-            gridCellPx,
-    );
-    const gridY = Math.floor(
-        (event.clientY - containerDomRect.top + container.scrollTop) /
-            gridCellPx,
-    );
-    selected_region = {
-        start: { gridX, gridY },
-        end: { gridX: gridX + 1, gridY: gridY + 1 },
-        anchor: { gridX, gridY },
-    };
-    selection.style.display = "block";
-    selection_update();
-    is_creating_selection = true;
-};
-
-container.onmousemove = function (event) {
-    if (!is_creating_selection || selected_region == null) {
-        // selection_clear();
-        return;
-    }
-    containerDomRect = container.getBoundingClientRect();
-    console.log("mouse move");
-
-    const gridCellPx = grid_cell_px_get();
-
-    const gridX = Math.floor(
-        (event.clientX - containerDomRect.left + container.scrollLeft) /
-            gridCellPx,
-    );
-    const gridY = Math.floor(
-        (event.clientY - containerDomRect.top + container.scrollTop) /
-            gridCellPx,
-    );
-    console.log(`end = [${gridX}, ${gridY}]`);
-    selected_region_end_set(gridX, gridY);
-
-    selection_update();
-};
-
-container.onmouseup = function (event) {
-    containerDomRect = container.getBoundingClientRect();
-    if (!is_creating_selection || selected_region == null) {
-        selection_clear();
-        return;
-    }
-    console.log("mouse up");
-
-    const gridCellPx = grid_cell_px_get();
-
-    const gridX = Math.floor(
-        (event.clientX - containerDomRect.left + container.scrollLeft) /
-            gridCellPx,
-    );
-    const gridY = Math.floor(
-        (event.clientY - containerDomRect.top + container.scrollTop) /
-            gridCellPx,
-    );
-    selected_region_end_set(gridX, gridY);
-
-    const selected_seats = selected_seats_compute();
-
-    if (selected_seats.length == 0) {
-        console.log("empty selection");
-        selection_clear();
-        return;
-    }
-
-    selection_update();
-    selected_seats_update(selected_seats);
-    is_creating_selection = false;
-};
 
 // PERF: use IntersectionObserver instead of manual calculation
 function selected_seats_compute() {
@@ -532,7 +355,7 @@ function selected_seats_update(selected_seats) {
             if ("selected" in seat.dataset) delete seat.dataset.selected;
             if (seat.parentNode == selection) {
                 seat.remove();
-                container.appendChild(seat);
+                container_ref.appendChild(seat);
             }
             seat.draggable = true;
         } else {
@@ -578,7 +401,7 @@ function dbg_render_dot_in_grid_square(color, gridX, gridY) {
     dbg_dot.classList = "rounded-full";
 
     dbg_dot.dataset["dbgdot"] = "";
-    container.appendChild(dbg_dot);
+    container_ref.appendChild(dbg_dot);
 }
 
 function dbg_clear_all_dots() {
@@ -755,7 +578,6 @@ function seat_loc_set(seat_ref, gridX, gridY) {
     seat_abs_loc_set(seat_ref, gridX, gridY);
 }
 
-const SEAT_DATA_STUDENT_DROP_INDICATION = "studentdragover";
 
 function seat_student_drop_indication_enable(seat_ref) {
     seat_ref.dataset[SEAT_DATA_STUDENT_DROP_INDICATION] = "";
@@ -912,7 +734,7 @@ function seat_create(gridX, gridY) {
     };
 
     element.ondrag = function (event) {
-        containerDomRect = container.getBoundingClientRect();
+        containerDomRect = container_ref.getBoundingClientRect();
         assert(containerDomRect != null, "containerDomRect not null");
 
         const [offsetX, offsetY] = elem_drag_offset_get(event.target);
@@ -921,20 +743,20 @@ function seat_create(gridX, gridY) {
             event.clientX -
             containerDomRect.left -
             offsetX +
-            container.scrollLeft;
+            container_ref.scrollLeft;
         const y =
             event.clientY -
             containerDomRect.top -
             offsetY +
-            container.scrollTop;
+            container_ref.scrollTop;
 
         element.style.transform = `translate(${x}px, ${y}px)`;
 
         const snapped_loc = closest_non_overlapping_pos(id, x, y);
         {
-            assert(seat_preview != null, "preview not null");
+            assert(seat_preview_ref != null, "preview not null");
             elem_grid_pos_set(
-                seat_preview,
+                seat_preview_ref,
                 snapped_loc.gridX,
                 snapped_loc.gridY,
             );
@@ -1018,7 +840,7 @@ function seat_create(gridX, gridY) {
             event.dataTransfer,
         );
 
-        const student_ref = students[student_index];
+        const student_ref = student_refs[student_index];
         seat_student_transfer(seat_ref, student_ref);
 
         event.stopPropagation();
@@ -1157,6 +979,7 @@ function elem_animate_move_swap(element, move, swapping_with) {
 /**
  * @param {HTMLElement} element
  * @param {() => void} move
+ * @param {boolean | undefined} center
  */
 function elem_animate_move(element, move, center = false) {
     // debugger
@@ -1297,17 +1120,17 @@ function container_handle_drop_seat(event) {
     const element = seat_refs[id];
     assert(element != null, "element not null");
 
-    assert(seat_preview != null, "preview not null");
+    assert(seat_preview_ref != null, "preview not null");
 
-    const [gridX, gridY] = elem_grid_pos_get(seat_preview);
+    const [gridX, gridY] = elem_grid_pos_get(seat_preview_ref);
 
     seat_loc_set(element, gridX, gridY);
 
     element.style.zIndex = 0;
 
-    container.appendChild(element);
+    container_ref.appendChild(element);
 
-    seat_preview.style.display = "none";
+    seat_preview_ref.style.display = "none";
 }
 
 function container_handle_drop_selection(event) {
@@ -1324,7 +1147,7 @@ function container_handle_drop_selection(event) {
             (event.clientX -
                 containerDomRect.left -
                 offsetX +
-                container.scrollLeft) /
+                container_ref.scrollLeft) /
                 gridCellPx,
         ),
         0,
@@ -1335,7 +1158,7 @@ function container_handle_drop_selection(event) {
             (event.clientY -
                 containerDomRect.top -
                 offsetY +
-                container.scrollTop) /
+                container_ref.scrollTop) /
                 gridCellPx,
         ),
         0,
@@ -1364,22 +1187,6 @@ function container_handle_drop_selection(event) {
 
     console.log("ON DROP SELECTION");
 }
-
-container.ondrop = function (event) {
-    const kind = event.dataTransfer.getData(DRAG_DATA_TYPE_KIND);
-    switch (kind) {
-        case DRAG_DATA_TYPE_KIND_SEAT:
-            container_handle_drop_seat(event);
-            break;
-        case DRAG_DATA_TYPE_KIND_SELECTION:
-            container_handle_drop_selection(event);
-            break;
-        case "":
-        default:
-            console.warn("unknown drop kind:", `'${kind}'`);
-            return;
-    }
-};
 
 /**
  * make an element invisible without unmounting from dom to preserve
@@ -1435,23 +1242,8 @@ function elem_make_visible(elem) {
     restore_style("border-color");
 }
 
-const students = [];
 
-//////////////
-// STUDENTS //
-//////////////
 
-const sidebar = document.getElementById("sidebar");
-assert(sidebar != null, "sidebar not null");
-const sidebar_student_input = sidebar.querySelector("#student-name-input");
-const sidebar_student_add = sidebar.querySelector("#add-student-button");
-const sidebar_student_list = sidebar.querySelector("#students");
-
-const STUDENT_CLASSLIST_SIDEBAR =
-    "ring-2 rounded-md w-40 h-8 flex items-center justify-center font-semibold text-xs bg-white text-black";
-
-const STUDENT_CLASSLIST_SEATING =
-    "border-2 border-black rounded-md w-min px-2 py-1 flex items-center justify-center font-semibold text-xs bg-white text-black break-normal";
 
 function student_get_seat(student_ref) {
     const seat_index_str = student_ref.dataset[STUDENT_DATA_SEAT_INDEX];
@@ -1470,7 +1262,7 @@ function student_get_seat(student_ref) {
 
 function student_make_unseated(student_ref) {
     student_ref.className = STUDENT_CLASSLIST_SIDEBAR;
-    sidebar_student_list.appendChild(student_ref);
+    sidebar_student_list_ref.appendChild(student_ref);
     assert(
         STUDENT_DATA_SEAT_INDEX in student_ref.dataset,
         "student to be unseated must be in seat",
@@ -1485,8 +1277,8 @@ function student_create(name) {
     student.textContent = name;
     student.dataset["student"] = "";
 
-    const student_index = students.length;
-    students.push(student);
+    const student_index = student_refs.length;
+    student_refs.push(student);
 
     student.draggable = true;
 
@@ -1523,19 +1315,66 @@ function student_create(name) {
     return student;
 }
 
-sidebar_student_add.onclick = () => {
-    // TODO: make sidebar_student_input a local here (i.e. do document.getElementById) as this is only place it is used
-    const name = sidebar_student_input.value;
-    if (!name) return;
-    sidebar_student_input.value = "";
-    sidebar_student_list.appendChild(student_create(name));
-    sidebar_student_input.focus();
-};
 
-containerDomRect = container.getBoundingClientRect();
+containerDomRect = container_ref.getBoundingClientRect();
 
 function init() {
-    // zoom
+    // {{{ container
+    {
+        container_ref.className = "relative bg-white";
+        container_ref.style.setProperty(
+            "--grid-cell-px",
+            gridCellPx_initial + "px",
+        );
+        container_ref.style.setProperty(SEAT_PROP_GRID_W, SEAT_GRID_W);
+        container_ref.style.setProperty(SEAT_PROP_GRID_H, SEAT_GRID_H);
+        container_ref.style.setProperty(GRID_PROP_W, gridW);
+        container_ref.style.setProperty(GRID_PROP_H, gridH);
+        container_ref.style.width = grid_cell_px_dim(GRID_PROP_W);
+        container_ref.style.height = grid_cell_px_dim(GRID_PROP_H);
+
+        container_ref.ondragover = function (event) {
+            event.preventDefault();
+        };
+
+        container_ref.style.backgroundImage = `
+        linear-gradient(to right, #e5e5e5 1px, transparent 1px),
+        linear-gradient(to bottom, #e5e5e5 1px, transparent 1px)
+        `;
+
+        container_ref.style.backgroundSize = `var(--grid-cell-px) var(--grid-cell-px)`;
+
+        container_ref.ondrop = function (event) {
+            const kind = event.dataTransfer.getData(DRAG_DATA_TYPE_KIND);
+            switch (kind) {
+                case DRAG_DATA_TYPE_KIND_SEAT:
+                    container_handle_drop_seat(event);
+                    break;
+                case DRAG_DATA_TYPE_KIND_SELECTION:
+                    container_handle_drop_selection(event);
+                    break;
+                case "":
+                default:
+                    console.warn("unknown drop kind:", `'${kind}'`);
+                    return;
+            }
+        };
+    }
+    // }}}
+
+    // {{{ seat preview
+    {
+        seat_preview_ref.id = "seat-preview";
+        seat_preview_ref.className =
+            "absolute bg-blue-300 border-2 border-indigo-500";
+        seat_preview_ref.style.display = "none";
+        seat_preview_ref.style.width = grid_cell_px_dim(SEAT_PROP_GRID_W);
+        seat_preview_ref.style.height = grid_cell_px_dim(SEAT_PROP_GRID_H);
+        container_ref.appendChild(seat_preview_ref);
+    }
+    // }}}
+
+    // {{{ zoom
     {
         const ZOOM_ID__IN = "zoom-in";
         const ZOOM_ID_OUT = "zoom-out";
@@ -1553,7 +1392,7 @@ function init() {
         // add to parent so that zoom still works if event triggers outside canvas
         // bounds and zoom is not interupted if zoom causes canvas to no longer be
         // under mouse (i.e. canvas shrinks)
-        container.parentElement.addEventListener("wheel", function (event) {
+        container_ref.parentElement.addEventListener("wheel", function (event) {
             if (!event.ctrlKey) {
                 return;
             }
@@ -1564,28 +1403,29 @@ function init() {
             // event.preventDefault();
         });
     }
+    // }}}
 
-    // seat controls
+    // {{{ seat controls
     {
-        document
-            .getElementById("add-seat-button")
-            .addEventListener("click", () => {
-                console.log("creating new seat");
-                container.appendChild(seat_create(0, 0));
-            });
+        const add_seat_btn = document.getElementById("add-seat-button");
 
-        container.addEventListener("click", function (event) {
+        add_seat_btn.addEventListener("click", () => {
+            console.log("creating new seat");
+            container_ref.appendChild(seat_create(0, 0));
+        });
+
+        container_ref.addEventListener("click", function (event) {
             if (!event.ctrlKey || is_creating_selection) {
                 return;
             }
             event.preventDefault();
 
-            containerDomRect = container.getBoundingClientRect();
+            containerDomRect = container_ref.getBoundingClientRect();
 
             const px_x =
-                event.clientX - containerDomRect.left + container.scrollLeft;
+                event.clientX - containerDomRect.left + container_ref.scrollLeft;
             const px_y =
-                event.clientY - containerDomRect.top + container.scrollTop;
+                event.clientY - containerDomRect.top + container_ref.scrollTop;
             const [center_gridX, center_gridY] = px_point_to_grid_round(
                 grid_cell_px_get(),
                 px_x,
@@ -1595,9 +1435,215 @@ function init() {
             const gridX = Math.round(center_gridX - SEAT_GRID_W / 2);
             const gridY = Math.round(center_gridY - SEAT_GRID_H / 2);
 
-            container.appendChild(seat_create(gridX, gridY));
+            container_ref.appendChild(seat_create(gridX, gridY));
         });
     }
+    // }}}
+
+    // {{{ selection
+    {
+        selection.id = "selection";
+        selection.className =
+            "absolute bg-blue-300/40 ring-2 ring-blue-500 z-5";
+        selection.style.display = "none";
+        selection.draggable = true;
+        container_ref.appendChild(selection);
+
+        ////////////////////////
+        // creating selection //
+        ////////////////////////
+
+        container_ref.addEventListener("mousedown", function (event) {
+            if (event.ctrlKey) {
+                return;
+            }
+            containerDomRect = container_ref.getBoundingClientRect();
+            console.log("mouse down", event.composedPath());
+            {
+                // ensure not clicking something besides container
+                const path = event.composedPath();
+                if (path.at(0)?.id !== container_ref.id) {
+                    return;
+                }
+            }
+
+            if (selected_region != null) {
+                selection_clear();
+            }
+
+            const gridCellPx = grid_cell_px_get();
+
+            const gridX = Math.floor(
+                (event.clientX - containerDomRect.left + container_ref.scrollLeft) /
+                    gridCellPx,
+            );
+            const gridY = Math.floor(
+                (event.clientY - containerDomRect.top + container_ref.scrollTop) /
+                    gridCellPx,
+            );
+            selected_region = {
+                start: { gridX, gridY },
+                end: { gridX: gridX + 1, gridY: gridY + 1 },
+                anchor: { gridX, gridY },
+            };
+            selection.style.display = "block";
+            selection_update();
+            is_creating_selection = true;
+        });
+
+        container_ref.addEventListener("mousemove", function (event) {
+            if (!is_creating_selection || selected_region == null) {
+                // selection_clear();
+                return;
+            }
+            containerDomRect = container_ref.getBoundingClientRect();
+            console.log("mouse move");
+
+            const gridCellPx = grid_cell_px_get();
+
+            const gridX = Math.floor(
+                (event.clientX - containerDomRect.left + container_ref.scrollLeft) /
+                    gridCellPx,
+            );
+            const gridY = Math.floor(
+                (event.clientY - containerDomRect.top + container_ref.scrollTop) /
+                    gridCellPx,
+            );
+            console.log(`end = [${gridX}, ${gridY}]`);
+            selected_region_end_set(gridX, gridY);
+
+            selection_update();
+        });
+
+        container_ref.addEventListener("mouseup", function (event) {
+            containerDomRect = container_ref.getBoundingClientRect();
+            if (!is_creating_selection || selected_region == null) {
+                selection_clear();
+                return;
+            }
+            console.log("mouse up");
+
+            const gridCellPx = grid_cell_px_get();
+
+            const gridX = Math.floor(
+                (event.clientX - containerDomRect.left + container_ref.scrollLeft) /
+                    gridCellPx,
+            );
+            const gridY = Math.floor(
+                (event.clientY - containerDomRect.top + container_ref.scrollTop) /
+                    gridCellPx,
+            );
+            selected_region_end_set(gridX, gridY);
+
+            const selected_seats = selected_seats_compute();
+
+            if (selected_seats.length == 0) {
+                console.log("empty selection");
+                selection_clear();
+                return;
+            }
+
+            selection_update();
+            selected_seats_update(selected_seats);
+            is_creating_selection = false;
+        });
+
+        ////////////////////////
+        // dragging selection //
+        ////////////////////////
+
+        selection.ondragstart = function (event) {
+            console.log("selection ondragstart");
+            if (is_creating_selection || selected_region == null) {
+                console.log("selection not ondragstart");
+                event.preventDefault();
+                return;
+            }
+            event.dataTransfer.setData(
+                DRAG_DATA_TYPE_KIND,
+                DRAG_DATA_TYPE_KIND_SELECTION,
+            );
+            event.dataTransfer.setDragImage(invisible_drag_preview, 0, 0);
+            elem_drag_offset_set(event.target, event.clientX, event.clientY);
+        };
+
+        selection.ondrag = function (event) {
+            containerDomRect = container_ref.getBoundingClientRect();
+            assert(containerDomRect != null, "containerDomRect not null");
+            assert(selected_region != null, "selected_region not null");
+
+            const [offsetX, offsetY] = elem_drag_offset_get(event.target);
+
+            const gridCellPx = grid_cell_px_get();
+
+            const gridX = clamp(
+                Math.round(
+                    (event.clientX -
+                        containerDomRect.left -
+                        offsetX +
+                        container_ref.scrollLeft) /
+                        gridCellPx,
+                ),
+                0,
+                gridW,
+            );
+            const gridY = clamp(
+                Math.round(
+                    (event.clientY -
+                        containerDomRect.top -
+                        offsetY +
+                        container_ref.scrollTop) /
+                        gridCellPx,
+                ),
+                0,
+                gridH,
+            );
+
+            const {
+                start: { gridX: startX, gridY: startY },
+                end: { gridX: endX, gridY: endY },
+            } = selected_region;
+
+            const width = endX - startX;
+            const height = endY - startY;
+
+            selected_region.start.gridX = gridX;
+            selected_region.start.gridY = gridY;
+            selected_region.end.gridX = gridX + width;
+            selected_region.end.gridY = gridY + height;
+
+            selection_update();
+        };
+
+        selection.ondragend = function (event) {
+            if (selected_region == null) {
+                console.warn("no selection on ondragend");
+            }
+
+            if (event.dataTransfer.dropEffect !== "none") {
+                // drop succeeded
+                return;
+            }
+        };
+    }
+    // }}}
+
+    // {{{ student controls
+    {
+        const sidebar_student_add = sidebar_ref.querySelector("#add-student-button");
+        const sidebar_student_input = sidebar_ref.querySelector("#student-name-input");
+
+        sidebar_student_add.onclick = () => {
+            // TODO: make sidebar_student_input a local here (i.e. do document.getElementById) as this is only place it is used
+            const name = sidebar_student_input.value;
+            if (!name) return;
+            sidebar_student_input.value = "";
+            sidebar_student_list_ref.appendChild(student_create(name));
+            sidebar_student_input.focus();
+        };
+
+    }
+    // }}}
 }
 
 init();
