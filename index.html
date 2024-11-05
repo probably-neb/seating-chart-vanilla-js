@@ -18,20 +18,20 @@
             <div class="w-64 bg-gray-100 p-4 overflow-y-auto text-black">
                 <h2 class="text-lg font-semibold mb-4">Seating Chart Creator</h2>
 
-                <button id="add-seat-button" class="bg-blue-500 rounded-md px-2 text-white">
+                <button id="add-seat-button" class="bg-blue-500 rounded-md px-2 text-white border-b-4 border-b-blue-800">
                     Add Seats
                 </button>
 
                 <fieldset class="border border-black pb-2">
                     <legend class="ml-2">Zoom</legend>
                     <div class="flex flex-row gap-4 items-center justify-evenly text-center">
-                        <button id="zoom-out" class="border border-black rounded-md px-2 font-semibold text-md">
+                        <button id="zoom-out" class="ring-1 ring-black rounded-md px-2 font-semibold text-md border-b-2 border-b-orange-800 bg-orange-500 w-6 text-center hover:bg-orange-600">
                             -
                         </button>
-                        <div id="zoom-display" class="border border-black px-2 py-1 w-12 h-8 text-center">
+                        <div id="zoom-display" class="border border-black px-2 py-1 w-16 h-8 text-center">
                                 100% <!-- PLACEHOLDER -->
                         </div>
-                        <button id="zoom-in" class="border border-black rounded-md px-2 font-semibold text-md">
+                        <button id="zoom-in" class="ring-1 ring-black rounded-md px-2 font-semibold text-md border-b-2 border-b-emerald-800 bg-emerald-500 w-6 text-center hover:bg-emerald-600">
                             +
                         </button >
                     </div>
@@ -49,8 +49,9 @@
                 <div class="mb-6">
                     <h3 class="text-md font-semibold mb-2">Add Student</h3>
                     <div class="flex space-x-2">
-                        <input id="student-name-input" type="text" placeholder="Student Name" class="h-9 px-3 py-2 bg-white text-black text-sm rounded-md w-40" />
-                        <button id="add-student-button" class="bg-black text-white rounded-lg w-9">
+                        <input id="student-name-input" type="text" placeholder="Student Name" class="h-9 px-3 py-2 bg-white text-black text-sm rounded-md w-40 ring-2 ring-pink-300 focus:ring-pink-500 focus:outline-none" />
+
+                        <button id="add-student-button" class="bg-pink-600 border-b-4 ring-1 ring-black border-b-pink-800 text-white rounded-lg w-9 focus:outline-none focus:ring-2 hover:bg-pink-700 text-2xl">
                             +
                         </Button>
                     </div>
