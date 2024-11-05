@@ -5,11 +5,12 @@ import "./style.css";
 const app = document.getElementById("app");
 assert(app != null, "app not null");
 
-
 // grid
-const gridW = 60;
-const gridH = 30;
-const gridCellPx_initial = Math.floor((0.8 * window.innerWidth) / gridW);
+const gridW_initial = 60;
+const gridH_initial = 30;
+const gridCellPx_initial = Math.floor(
+    (0.8 * window.innerWidth) / gridW_initial,
+);
 
 const GRID_PROP_W = "--grid-w";
 const GRID_PROP_H = "--grid-h";
@@ -48,8 +49,13 @@ assert(container_ref != null, "container not null");
 let containerDomRect;
 
 // selection
-const selection = document.createElement("div");
+const SELECTION_PROP_WIDTH = "--width";
+const SELECTION_PROP_HEIGHT = "--height";
+
+const SELECTION_CLIPBOARD_DATA_TYPE = "deskribe/selection";
+const selection_ref = document.createElement("div");
 let is_creating_selection = false;
+/** @type {{anchor: {gridX: number, gridY: number}, start: {gridX: number, gridY: number}, end: {gridX: number: gridY: number}} | undefined}*/
 let selected_region;
 
 // drag
@@ -64,7 +70,6 @@ const invisible_drag_preview = document.createElement("span");
     invisible_drag_preview.style.display = "none";
     app.appendChild(invisible_drag_preview);
 }
-
 
 // student
 const STUDENT_DATA_SEAT_INDEX = "seatindex";
@@ -85,9 +90,6 @@ const STUDENT_CLASSLIST_SIDEBAR =
 const STUDENT_CLASSLIST_SEATING =
     "border-2 border-black rounded-md w-min px-2 py-1 flex items-center justify-center font-semibold text-xs bg-white text-black break-normal";
 
-
-
-
 function assert(val, ...msg) {
     if (val) return;
     console.error("Assertion failed: ", ...msg);
@@ -104,7 +106,8 @@ function grid_cell_px_dim(v) {
 }
 
 function grid_cell_px_get() {
-    const gridCellPxStr = container_ref.style.getPropertyValue("--grid-cell-px");
+    const gridCellPxStr =
+        container_ref.style.getPropertyValue("--grid-cell-px");
     const gridCellPx = Number.parseFloat(gridCellPxStr.slice(0, -"px".length));
 
     assert(
@@ -236,29 +239,48 @@ function selection_update() {
         return;
     }
 
+    selection_ref.style.display = "block"
+
     const {
         start: { gridX: startX, gridY: startY },
         end: { gridX: endX, gridY: endY },
     } = selected_region;
 
-    elem_grid_pos_set(selection, startX, startY);
+    elem_grid_pos_set(selection_ref, startX, startY);
 
-    const PROP_WIDTH = "--width";
-    const PROP_HEIGHT = "--height";
-    selection.style.setProperty(PROP_WIDTH, Math.abs(endX - startX));
-    selection.style.setProperty(PROP_HEIGHT, Math.abs(endY - startY));
+    selection_dims_set(Math.abs(endX - startX), Math.abs(endY - startY));
 
-    selection.style.width = grid_cell_px_dim(PROP_WIDTH);
-    selection.style.height = grid_cell_px_dim(PROP_HEIGHT);
-
-    console.log({
-        width: selection.style.width,
-        height: selection.style.height,
-    });
+    selection_ref.style.width = grid_cell_px_dim(SELECTION_PROP_WIDTH);
+    selection_ref.style.height = grid_cell_px_dim(SELECTION_PROP_HEIGHT);
 }
 
 function selected_seat_refs_get() {
-    return selection.querySelectorAll(`[data-${SEAT_DATA_IDENTIFIER}]`);
+    return selection_ref.querySelectorAll(`[data-${SEAT_DATA_IDENTIFIER}]`);
+}
+
+function selection_dims_set(width, height) {
+    assert(Number.isSafeInteger(width));
+    assert(Number.isSafeInteger(height));
+    assert(width >= 0, width);
+    assert(height >= 0, height);
+    selection_ref.style.setProperty(SELECTION_PROP_WIDTH, width);
+    selection_ref.style.setProperty(SELECTION_PROP_HEIGHT, height);
+}
+
+function selection_dims_get() {
+    const width = Number.parseInt(
+        selection_ref.style.getPropertyValue(SELECTION_PROP_WIDTH),
+    );
+    const height = Number.parseInt(
+        selection_ref.style.getPropertyValue(SELECTION_PROP_HEIGHT),
+    );
+
+    assert(Number.isSafeInteger(width));
+    assert(Number.isSafeInteger(height));
+    assert(width > 0);
+    assert(height > 0);
+
+    return [width, height];
 }
 
 function selection_clear() {
@@ -276,9 +298,9 @@ function selection_clear() {
             is_creating_selection,
         );
         assert(
-            selection.style.display === "none",
+            selection_ref.style.display === "none",
             "no selection -> style is hidden",
-            selection.style.display,
+            selection_ref.style.display,
         );
         return;
     }
@@ -289,7 +311,7 @@ function selection_clear() {
         seat_grid_pos_revert_to_abs_loc(seat);
         seat.draggable = true;
     }
-    selection.style.display = "none";
+    selection_ref.style.display = "none";
     selected_region = null;
     is_creating_selection = false;
 }
@@ -347,27 +369,51 @@ function selected_seats_compute() {
     return selected_seats;
 }
 
-function selected_seats_update(selected_seats) {
+/**
+ * @param {Array<{gridX: number, gridY: number} | null>} selected_seat_offsets
+ */
+function selected_seats_update(selected_seat_offsets) {
     for (let i = 0; i < seat_refs.length; i++) {
-        const seat = seat_refs[i];
-        const selected_offset = selected_seats[i];
-        if (selected_offset == null) {
-            if ("selected" in seat.dataset) delete seat.dataset.selected;
-            if (seat.parentNode == selection) {
-                seat.remove();
-                container_ref.appendChild(seat);
+        const seat_ref = seat_refs[i];
+        if (seat_ref == null) {
+            continue;
+        }
+        const selected_offset = selected_seat_offsets[i];
+        if (selected_offset == null && seat_is_selected(seat_ref)) {
+            if ("selected" in seat_ref.dataset) {
+                delete seat_ref.dataset.selected;
             }
-            seat.draggable = true;
-        } else {
-            elem_grid_pos_set(
-                seat,
+            if (seat_ref.parentElement == selection_ref) {
+                seat_ref.remove();
+                container_ref.appendChild(seat_ref);
+            }
+            seat_ref.draggable = true;
+        } else if (selected_offset != null && !seat_is_selected(seat_ref)) {
+            seat_make_selected(
+                seat_ref,
                 selected_offset.gridX,
                 selected_offset.gridY,
             );
-            selection.appendChild(seat);
-            seat.draggable = false;
         }
     }
+}
+
+function seat_make_selected(seat_ref, ofsX, ofsY) {
+    elem_grid_pos_set(seat_ref, ofsX, ofsY);
+    seat_ref.dataset["selected"] = "";
+    selection_ref.appendChild(seat_ref);
+    seat_ref.draggable = false;
+}
+
+function seat_is_selected(seat_ref) {
+    if (seat_ref.parentElement === selection_ref) {
+        assert(
+            "selected" in seat_ref.dataset,
+            "selected seat should have selected in dataset",
+        );
+        return true;
+    }
+    return false;
 }
 
 function* dbg_generate_rainbow_colors(max_colors = 360) {
@@ -424,8 +470,8 @@ function closest_non_overlapping_pos(dragging_index, absX, absY) {
 
     function isValidPosition(gridX, gridY) {
         let is_not_overlapping = true;
-        if (gridX < 0 || gridX > gridW - SEAT_GRID_W) return false;
-        if (gridY < 0 || gridY > gridH - SEAT_GRID_H) return false;
+        if (gridX < 0 || gridX > gridW_initial - SEAT_GRID_W) return false;
+        if (gridY < 0 || gridY > gridH_initial - SEAT_GRID_H) return false;
         for (let i = 0; i < seat_locs.length && is_not_overlapping; i++) {
             if (i === dragging_index) continue; // Skip the actively dragging seat
 
@@ -457,7 +503,7 @@ function closest_non_overlapping_pos(dragging_index, absX, absY) {
     );
     const [centerX, centerY] = seat_center_exact(absGridX, absGridY);
 
-    const max_radius = Math.min(gridW, gridH);
+    const max_radius = Math.min(gridW_initial, gridH_initial);
 
     for (let radius = 1; radius <= max_radius; radius++) {
         for (let angle = 0; angle < 360; angle++) {
@@ -570,14 +616,13 @@ function seat_loc_set(seat_ref, gridX, gridY) {
     assert(Number.isSafeInteger(gridX), "gridX is number", gridX);
     assert(Number.isSafeInteger(gridY), "gridY is number", gridY);
 
-    assert(gridX >= 0 && gridX < gridW, "gridX is valid", gridX);
-    assert(gridY >= 0 && gridY < gridH, "gridY is valid", gridY);
+    assert(gridX >= 0 && gridX < gridW_initial, "gridX is valid", gridX);
+    assert(gridY >= 0 && gridY < gridH_initial, "gridY is valid", gridY);
 
     elem_grid_pos_set(seat_ref, gridX, gridY);
 
     seat_abs_loc_set(seat_ref, gridX, gridY);
 }
-
 
 function seat_student_drop_indication_enable(seat_ref) {
     seat_ref.dataset[SEAT_DATA_STUDENT_DROP_INDICATION] = "";
@@ -642,7 +687,7 @@ function seat_student_pop(seat_ref) {
 function seat_student_transfer(dest_seat_ref, student_ref) {
     const student_in_seat_ref = seat_student_get(dest_seat_ref);
 
-    const original_seat_ref = student_get_seat(student_ref);
+    const original_seat_ref = student_seat_get(student_ref);
 
     if (original_seat_ref === dest_seat_ref) {
         return;
@@ -760,7 +805,6 @@ function seat_create(gridX, gridY) {
                 snapped_loc.gridX,
                 snapped_loc.gridY,
             );
-            // preview.style.transform = `translate(${snapped_loc.gridX * gridCellPx}px, ${snapped_loc.gridY * gridCellPx}px)`;
         }
     };
 
@@ -890,32 +934,33 @@ function elem_apply_onetime_transition(elem, transition) {
 }
 
 /**
- * @param {HTMLElement} element
+ * @param {HTMLElement} elem_ref
  * @param {() => void} move
- * @param {HTMLElement} swapping_with
+ * @param {HTMLElement} swapping_with_ref
  */
-function elem_animate_move_swap(element, move, swapping_with) {
+function elem_animate_move_swap(elem_ref, move, swapping_with_ref) {
     // get swapping_with rect first so that the {top,left} values
     // are not effected by the element getting moved
-    const final_elem_rect = swapping_with.getBoundingClientRect();
+    const final_elem_rect = swapping_with_ref.getBoundingClientRect();
 
     // debugger
-    // Step 1: Get the initial position
-    const initialRect = element.getBoundingClientRect();
+    // Step 1: Get the initial position & create elevated container
+    //         so animation appears above everything else
+    const initialRect = elem_ref.getBoundingClientRect();
 
     // PERF: store elevated container in dom (hidden) instead
     // of recreating on each animated move
-    const elevated_container = document.createElement("div");
-    elevated_container.style.zIndex = 999;
-    elevated_container.style.position = "absolute";
-    elevated_container.className = "w-full h-full";
-    elevated_container.style.top = 0;
-    elevated_container.style.left = 0;
-    const elevated_container_inner = document.createElement("div");
-    elevated_container_inner.style.position = "relative";
-    elevated_container_inner.className = "w-full h-full";
-    elevated_container.appendChild(elevated_container_inner);
-    document.body.appendChild(elevated_container);
+    const elevated_container_ref = document.createElement("div");
+    elevated_container_ref.style.zIndex = 999;
+    elevated_container_ref.style.position = "absolute";
+    elevated_container_ref.className = "w-full h-full";
+    elevated_container_ref.style.top = 0;
+    elevated_container_ref.style.left = 0;
+    const elevated_container_inner_ref = document.createElement("div");
+    elevated_container_inner_ref.style.position = "relative";
+    elevated_container_inner_ref.className = "w-full h-full";
+    elevated_container_ref.appendChild(elevated_container_inner_ref);
+    document.body.appendChild(elevated_container_ref);
 
     // Step 2: Move the element to the new container
     move();
@@ -932,48 +977,50 @@ function elem_animate_move_swap(element, move, swapping_with) {
     const deltaX = initialRect.left - final_rect_x;
     const deltaY = initialRect.top - final_rect_y;
 
-    const final_parent = element.parentElement;
-    const final_next_sibling = element.nextElementSibling;
+    const final_parent_ref = elem_ref.parentElement;
+    const final_next_sibling_ref = elem_ref.nextElementSibling;
 
-    const element_prev_position = element.style.position;
-    element.style.position = "absolute";
-    element.style.top = initialRect.top - deltaY + "px";
-    element.style.left = initialRect.left - deltaX + "px";
-    elevated_container_inner.appendChild(element);
+    const element_prev_position = elem_ref.style.position;
+    elem_ref.style.position = "absolute";
+    elem_ref.style.top = initialRect.top - deltaY + "px";
+    elem_ref.style.left = initialRect.left - deltaX + "px";
+    elevated_container_inner_ref.appendChild(elem_ref);
 
     // Step 4: Apply the inverse transform
-    assert(!element.style.transform, "overwriting transform");
-    element.style.transform = `translate(${deltaX}px, ${deltaY}px)`;
-    element.style.transition = "transform 0s";
+    assert(!elem_ref.style.transform, "overwriting transform");
+    elem_ref.style.transform = `translate(${deltaX}px, ${deltaY}px)`;
+    elem_ref.style.transition = "transform 0s";
 
     // Force a repaint
-    element.offsetWidth;
+    elem_ref.offsetWidth;
 
     const distance = Math.sqrt(
         Math.pow(final_rect_x - initialRect.left, 2) +
             Math.pow(final_rect_y - initialRect.top, 2),
     );
 
-    const duration = distance / 300;
+    const duration = distance / 1000;
 
     // Step 5: Remove the transform with a transition
-    element.style.transform = "";
-    element.style.transition = `transform ${duration}s`;
+    elem_ref.style.transform = "";
+    elem_ref.style.transitionProperty = "transform";
+    elem_ref.style.transitionDuration = duration + "s";
+    elem_ref.style.transitionTimingFunction = "linear";
 
     // Optional: Clean up styles after animation
-    element.addEventListener("transitionend", function cleanUp() {
-        element.style.transition = "";
-        element.style.position = element_prev_position;
-        delete element.style.top;
-        delete element.style.left;
-        element.removeEventListener("transitionend", cleanUp);
+    elem_ref.addEventListener("transitionend", function cleanUp() {
+        elem_ref.style.transition = "";
+        elem_ref.style.position = element_prev_position;
+        delete elem_ref.style.top;
+        delete elem_ref.style.left;
+        elem_ref.removeEventListener("transitionend", cleanUp);
 
-        if (final_next_sibling) {
-            final_next_sibling.insertBefore(element);
+        if (final_next_sibling_ref) {
+            final_next_sibling_ref.insertBefore(elem_ref);
         } else {
-            final_parent.appendChild(element);
+            final_parent_ref.appendChild(elem_ref);
         }
-        document.body.removeChild(elevated_container);
+        document.body.removeChild(elevated_container_ref);
     });
 }
 /**
@@ -1046,11 +1093,13 @@ function elem_animate_move(element, move, center = false) {
         initialRect.top,
     );
 
-    const duration = distance / 300;
+    const duration = distance / 1000;
 
     // Step 5: Remove the transform with a transition
     element.style.transform = "";
-    element.style.transition = `transform ${duration}s`;
+    element.style.transitionProperty = "transform";
+    element.style.transitionDuration = duration + "s";
+    element.style.transitionTimingFunction = "linear";
 
     // Optional: Clean up styles after animation
     element.addEventListener("transitionend", function cleanUp() {
@@ -1138,7 +1187,7 @@ function container_handle_drop_selection(event) {
 
     assert(containerDomRect != null, "containerDomRect not null");
 
-    const [offsetX, offsetY] = elem_drag_offset_get(event.target);
+    const [offsetX, offsetY] = elem_drag_offset_get(selection_ref);
 
     const gridCellPx = grid_cell_px_get();
 
@@ -1151,7 +1200,7 @@ function container_handle_drop_selection(event) {
                 gridCellPx,
         ),
         0,
-        gridW,
+        gridW_initial,
     );
     const gridY = clamp(
         Math.round(
@@ -1162,7 +1211,7 @@ function container_handle_drop_selection(event) {
                 gridCellPx,
         ),
         0,
-        gridH,
+        gridH_initial,
     );
 
     const {
@@ -1242,10 +1291,7 @@ function elem_make_visible(elem) {
     restore_style("border-color");
 }
 
-
-
-
-function student_get_seat(student_ref) {
+function student_seat_get(student_ref) {
     const seat_index_str = student_ref.dataset[STUDENT_DATA_SEAT_INDEX];
     if (!seat_index_str) {
         return null;
@@ -1272,17 +1318,17 @@ function student_make_unseated(student_ref) {
 }
 
 function student_create(name) {
-    const student = document.createElement("div");
-    student.className = STUDENT_CLASSLIST_SIDEBAR;
-    student.textContent = name;
-    student.dataset["student"] = "";
+    const student_ref = document.createElement("div");
+    student_ref.className = STUDENT_CLASSLIST_SIDEBAR;
+    student_ref.textContent = name;
+    student_ref.dataset["student"] = "";
 
     const student_index = student_refs.length;
-    student_refs.push(student);
+    student_refs.push(student_ref);
 
-    student.draggable = true;
+    student_ref.draggable = true;
 
-    student.ondragstart = function (event) {
+    student_ref.ondragstart = function (event) {
         event.stopPropagation();
 
         const student_ref = event.currentTarget;
@@ -1298,23 +1344,22 @@ function student_create(name) {
         student_ref.style.zIndex = 50;
     };
 
-    student.ondrag = function (event) {
+    student_ref.ondrag = function (event) {
         elem_make_invisible(event.target);
         event.stopPropagation();
     };
 
-    student.ondragover = function (event) {
+    student_ref.ondragover = function (event) {
         event.preventDefault();
     };
 
-    student.ondragend = function (event) {
+    student_ref.ondragend = function (event) {
         const student_ref = event.currentTarget;
         elem_make_visible(student_ref);
     };
 
-    return student;
+    return student_ref;
 }
-
 
 containerDomRect = container_ref.getBoundingClientRect();
 
@@ -1328,8 +1373,8 @@ function init() {
         );
         container_ref.style.setProperty(SEAT_PROP_GRID_W, SEAT_GRID_W);
         container_ref.style.setProperty(SEAT_PROP_GRID_H, SEAT_GRID_H);
-        container_ref.style.setProperty(GRID_PROP_W, gridW);
-        container_ref.style.setProperty(GRID_PROP_H, gridH);
+        container_ref.style.setProperty(GRID_PROP_W, gridW_initial);
+        container_ref.style.setProperty(GRID_PROP_H, gridH_initial);
         container_ref.style.width = grid_cell_px_dim(GRID_PROP_W);
         container_ref.style.height = grid_cell_px_dim(GRID_PROP_H);
 
@@ -1423,7 +1468,9 @@ function init() {
             containerDomRect = container_ref.getBoundingClientRect();
 
             const px_x =
-                event.clientX - containerDomRect.left + container_ref.scrollLeft;
+                event.clientX -
+                containerDomRect.left +
+                container_ref.scrollLeft;
             const px_y =
                 event.clientY - containerDomRect.top + container_ref.scrollTop;
             const [center_gridX, center_gridY] = px_point_to_grid_round(
@@ -1442,12 +1489,12 @@ function init() {
 
     // {{{ selection
     {
-        selection.id = "selection";
-        selection.className =
+        selection_ref.id = "selection";
+        selection_ref.className =
             "absolute bg-blue-300/40 ring-2 ring-blue-500 z-5";
-        selection.style.display = "none";
-        selection.draggable = true;
-        container_ref.appendChild(selection);
+        selection_ref.style.display = "none";
+        selection_ref.draggable = true;
+        container_ref.appendChild(selection_ref);
 
         ////////////////////////
         // creating selection //
@@ -1474,11 +1521,15 @@ function init() {
             const gridCellPx = grid_cell_px_get();
 
             const gridX = Math.floor(
-                (event.clientX - containerDomRect.left + container_ref.scrollLeft) /
+                (event.clientX -
+                    containerDomRect.left +
+                    container_ref.scrollLeft) /
                     gridCellPx,
             );
             const gridY = Math.floor(
-                (event.clientY - containerDomRect.top + container_ref.scrollTop) /
+                (event.clientY -
+                    containerDomRect.top +
+                    container_ref.scrollTop) /
                     gridCellPx,
             );
             selected_region = {
@@ -1486,7 +1537,6 @@ function init() {
                 end: { gridX: gridX + 1, gridY: gridY + 1 },
                 anchor: { gridX, gridY },
             };
-            selection.style.display = "block";
             selection_update();
             is_creating_selection = true;
         });
@@ -1497,19 +1547,21 @@ function init() {
                 return;
             }
             containerDomRect = container_ref.getBoundingClientRect();
-            console.log("mouse move");
 
             const gridCellPx = grid_cell_px_get();
 
             const gridX = Math.floor(
-                (event.clientX - containerDomRect.left + container_ref.scrollLeft) /
+                (event.clientX -
+                    containerDomRect.left +
+                    container_ref.scrollLeft) /
                     gridCellPx,
             );
             const gridY = Math.floor(
-                (event.clientY - containerDomRect.top + container_ref.scrollTop) /
+                (event.clientY -
+                    containerDomRect.top +
+                    container_ref.scrollTop) /
                     gridCellPx,
             );
-            console.log(`end = [${gridX}, ${gridY}]`);
             selected_region_end_set(gridX, gridY);
 
             selection_update();
@@ -1526,11 +1578,15 @@ function init() {
             const gridCellPx = grid_cell_px_get();
 
             const gridX = Math.floor(
-                (event.clientX - containerDomRect.left + container_ref.scrollLeft) /
+                (event.clientX -
+                    containerDomRect.left +
+                    container_ref.scrollLeft) /
                     gridCellPx,
             );
             const gridY = Math.floor(
-                (event.clientY - containerDomRect.top + container_ref.scrollTop) /
+                (event.clientY -
+                    containerDomRect.top +
+                    container_ref.scrollTop) /
                     gridCellPx,
             );
             selected_region_end_set(gridX, gridY);
@@ -1552,7 +1608,7 @@ function init() {
         // dragging selection //
         ////////////////////////
 
-        selection.ondragstart = function (event) {
+        selection_ref.ondragstart = function (event) {
             console.log("selection ondragstart");
             if (is_creating_selection || selected_region == null) {
                 console.log("selection not ondragstart");
@@ -1567,7 +1623,7 @@ function init() {
             elem_drag_offset_set(event.target, event.clientX, event.clientY);
         };
 
-        selection.ondrag = function (event) {
+        selection_ref.ondrag = function (event) {
             containerDomRect = container_ref.getBoundingClientRect();
             assert(containerDomRect != null, "containerDomRect not null");
             assert(selected_region != null, "selected_region not null");
@@ -1585,7 +1641,7 @@ function init() {
                         gridCellPx,
                 ),
                 0,
-                gridW,
+                gridW_initial,
             );
             const gridY = clamp(
                 Math.round(
@@ -1596,7 +1652,7 @@ function init() {
                         gridCellPx,
                 ),
                 0,
-                gridH,
+                gridH_initial,
             );
 
             const {
@@ -1615,7 +1671,7 @@ function init() {
             selection_update();
         };
 
-        selection.ondragend = function (event) {
+        selection_ref.ondragend = function (event) {
             if (selected_region == null) {
                 console.warn("no selection on ondragend");
             }
@@ -1628,10 +1684,124 @@ function init() {
     }
     // }}}
 
+    // {{{ copy and pasting selection
+    {
+        window.addEventListener("copy", function (event) {
+            const window_selection = window.getSelection();
+            if (window_selection && window_selection.toString().length > 0) {
+                // don't copy selection if user is trying to copy
+                // something else
+                return;
+            }
+            if (!selected_region) {
+                // don't copy if no selection
+                console.warn("no selected region");
+                return;
+            }
+
+            if (is_creating_selection) {
+                console.warn("cannot copy selection while creating");
+                return;
+            }
+
+            if (!event.clipboardData) {
+                console.warn("no clipboardData!");
+                return;
+            }
+            event.preventDefault();
+
+            const selected_offsets = [];
+
+            const selected_seats = selected_seat_refs_get();
+            for (const seat_ref of selected_seats) {
+                const [gridX, gridY] = elem_grid_pos_get(seat_ref);
+                selected_offsets.push({ gridX, gridY });
+            }
+
+            const [width, height] = selection_dims_get();
+
+            event.clipboardData.setData(
+                SELECTION_CLIPBOARD_DATA_TYPE,
+                JSON.stringify({
+                    selected_offsets,
+                    width,
+                    height,
+                }),
+            );
+        });
+
+        window.addEventListener("paste", function (event) {
+            if (!event.clipboardData) {
+                return;
+            }
+
+            const selection_data_str = event.clipboardData.getData(
+                SELECTION_CLIPBOARD_DATA_TYPE,
+            );
+
+            if (!selection_data_str) {
+                return;
+            }
+
+            event.preventDefault();
+
+            let selection_data;
+            try {
+                selection_data = JSON.parse(selection_data_str);
+            } catch (e) {
+                console.error("failed to parse selection data", e);
+                return;
+            }
+
+            assert(
+                "selected_offsets" in selection_data &&
+                    Array.isArray(selection_data.selected_offsets),
+            );
+            assert(
+                "width" in selection_data &&
+                    typeof selection_data.width == "number",
+            );
+            assert(
+                "height" in selection_data &&
+                    typeof selection_data.height == "number",
+            );
+            // debugger;
+
+            const startX = Math.round(gridW_initial / 2);
+            const startY = Math.round(gridH_initial / 2);
+            const endX = startX + selection_data.width;
+            const endY = startY + selection_data.height;
+
+            selection_clear();
+
+            selected_region = {
+                start: { gridX: startX, gridY: startY },
+                end: { gridX: endX, gridY: endY },
+            };
+
+            selection_update();
+
+            for (const { gridX, gridY } of selection_data.selected_offsets) {
+                const new_seat_ref = seat_create(
+                    startX + gridX,
+                    startY + gridY,
+                );
+                seat_make_selected(new_seat_ref, gridX, gridY);
+            }
+
+            console.log("paste:", selection_data, event);
+        });
+    }
+    // }}}
+
     // {{{ student controls
     {
-        const sidebar_student_add = sidebar_ref.querySelector("#add-student-button");
-        const sidebar_student_input = sidebar_ref.querySelector("#student-name-input");
+        const sidebar_student_add = sidebar_ref.querySelector(
+            "#add-student-button",
+        );
+        const sidebar_student_input = sidebar_ref.querySelector(
+            "#student-name-input",
+        );
 
         sidebar_student_add.onclick = () => {
             // TODO: make sidebar_student_input a local here (i.e. do document.getElementById) as this is only place it is used
@@ -1641,7 +1811,6 @@ function init() {
             sidebar_student_list_ref.appendChild(student_create(name));
             sidebar_student_input.focus();
         };
-
     }
     // }}}
 }
