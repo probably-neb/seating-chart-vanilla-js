@@ -258,6 +258,13 @@ function selected_seat_refs_get() {
     return selection_ref.querySelectorAll(`[data-${SEAT_DATA_IDENTIFIER}]`);
 }
 
+function selection_force_appear_above_seats() {
+    if (selection_ref.nextElementSibling == null) {
+        return
+    }
+    container_ref.appendChild(selection_ref);
+}
+
 function selection_dims_set(width, height) {
     assert(Number.isSafeInteger(width));
     assert(Number.isSafeInteger(height));
@@ -1561,6 +1568,7 @@ function init() {
                 anchor: { gridX, gridY },
             };
             selection_update();
+            selection_ref.draggable = "false"
             is_creating_selection = true;
         });
 
@@ -1625,6 +1633,7 @@ function init() {
             selection_update();
             selected_seats_update(selected_seats);
             is_creating_selection = false;
+            selection_ref.draggable = "true"
         });
 
         ////////////////////////
@@ -1632,7 +1641,6 @@ function init() {
         ////////////////////////
 
         selection_ref.ondragstart = function (event) {
-            console.log("selection ondragstart");
             if (is_creating_selection || selected_region == null) {
                 console.log("selection not ondragstart");
                 event.preventDefault();
@@ -1644,6 +1652,7 @@ function init() {
             );
             event.dataTransfer.setDragImage(invisible_drag_preview, 0, 0);
             elem_drag_offset_set(event.target, event.clientX, event.clientY);
+            selection_force_appear_above_seats();
         };
 
         selection_ref.ondrag = function (event) {
@@ -1803,6 +1812,7 @@ function init() {
             };
 
             selection_update();
+            selection_force_appear_above_seats();
 
             for (const { gridX, gridY } of selection_data.selected_offsets) {
                 const new_seat_ref = seat_create(
