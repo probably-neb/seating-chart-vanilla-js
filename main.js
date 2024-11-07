@@ -1361,6 +1361,29 @@ function student_create(name) {
     return student_ref;
 }
 
+function grid_w_set(gridW) {
+    container_ref.style.setProperty(GRID_PROP_W, gridW);
+}
+
+function grid_h_set(gridH) {
+    container_ref.style.setProperty(GRID_PROP_H, gridH);
+}
+
+function grid_dims_set(gridW, gridH) {
+    container_ref.style.setProperty(GRID_PROP_W, gridW);
+    container_ref.style.setProperty(GRID_PROP_H, gridH);
+}
+
+function grid_dims_get() {
+    const gridW = Number.parseInt(container_ref.style.getPropertyValue(GRID_PROP_W));
+    const gridH = Number.parseInt(container_ref.style.getPropertyValue(GRID_PROP_H));
+
+    assert(Number.isSafeInteger(gridW))
+    assert(Number.isSafeInteger(gridH))
+
+    return [gridW, gridH]
+}
+
 containerDomRect = container_ref.getBoundingClientRect();
 
 function init() {
@@ -1791,6 +1814,49 @@ function init() {
 
             console.log("paste:", selection_data, event);
         });
+    }
+    // }}}
+
+    // {{{ grid controls
+    {
+        /** @type {HTMLInputElement} */
+        const grid_rows_input = document.getElementById("rows-input")
+        /** @type {HTMLInputElement} */
+        const grid_cols_input = document.getElementById("cols-input")
+
+        assert(grid_rows_input != null)
+        assert(grid_cols_input != null)
+
+        grid_rows_input.value = gridH_initial
+        grid_cols_input.value = gridW_initial
+
+        grid_rows_input.addEventListener("change", function (event) {
+            const value = Number.parseInt(event.target.value)
+            if (!Number.isSafeInteger(value)) {
+                console.error("grid rows not int:", value, event.target.value)
+                return;
+            }
+            if (value < 1) {
+                console.error("grid rows < 1:", value, event.target.value)
+                return
+            }
+
+            grid_h_set(value)
+        })
+
+        grid_cols_input.addEventListener("change", function (event) {
+            const value = Number.parseInt(event.target.value)
+            if (!Number.isSafeInteger(value)) {
+                console.error("grid rows not int:", value, event.target.value)
+                return;
+            }
+            if (value < 1) {
+                console.error("grid cols < 1:", value, event.target.value)
+                return
+            }
+
+            grid_w_set(value)
+        })
     }
     // }}}
 
